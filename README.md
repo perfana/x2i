@@ -95,7 +95,7 @@ create an issue to discuss the contribution first.
 ## How to release new version?
 * Commit your changes to main.
 * Make sure you update the version number in cmd/root.go, around line 96.
-* Create new tag with the new version, this triggers a new build and published the binaries.
+* Create new tag with the new version (e.g. x2i-1.2.3), this triggers a new build and publishes the binaries.
 
 ## License
 This application is licensed under MIT license. Please read the LICENSE file for details.
