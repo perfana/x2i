@@ -32,7 +32,7 @@ database.
 The following versions of InfluxDB are known to work:
 * InfluxDB OSS 1.8.10
 
-
+Later versions of InfluxDB are not supported.
 
 ## Usage
 Run `x2i -h` for a quick help with examples for the different load generation tools that are supported.
@@ -50,10 +50,35 @@ Datapoints are send to Influxdb when either the hardcoded timeout of 5 seconds i
 number of datapoints is logged. The number of datapoints that is being send is logged in the x2i log file.
 
 ### Gatling
+* Requires version 3.5.0 or above.
+* In gatling.conf enable the DataWriters to file; if you change the directory => results value, make sure you set the
+correct path as argument to x2i
 
 ### JMeter
+Add a <i>View Results Tree</i> component that logs errors and successes to the Filename
+`~/results/${__time(yyyy-MM-dd-HH-mm)}/resultsTree.csv`. Configure it by enabling the following fields:
+* Save Elapsed Time
+* Save Response Messages
+* Save Success
+* Save sent by count
+* Save Idle Time
+* Save Assertion Results (XML)
+* Save Field Names (CSV)
+* Save Label
+* Save Thread Name
+* Save Assertion Failure Message
+* Save Active Thread Counts
+* Save Latency
+* Save Time Stamp
+* Save Response Code
+* Save Data Type
+* Save received byte count
+* Save URL
+* Save Connect Time
+* Save Sub Results
 
 ### K6
+Use `k6 run --out csv=test_results.csv`.
 
 ## Integration
 
