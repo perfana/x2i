@@ -1,0 +1,40 @@
+name: build x2i
+
+on:
+  push:
+    tags:
+      - x2i-*
+
+  workflow_dispatch:
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.4
+
+      - name: Build
+        run: |
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o x2i-linux-amd64 x2i.go 
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o x2i-linux-arm64 x2i.go 
+          GOOS=windows GOARCH=386 go build -o x2i-windows-386.exe x2i.go
+          GOOS=windows GOARCH=amd64 go build -o x2i-windows-amd64.exe x2i.go
+          GOOS=darwin GOARCH=amd64 go build -o x2i-macos-amd64 x2i.go
+          GOOS=darwin GOARCH=arm64 go build -o x2i-macos-arm64 x2i.go
+
+      - uses: olegtarasov/get-tag@v2.1.3
+        id: tagName
+
+      - uses: ncipollo/release-action@v1.14.0
+        with:
+          artifacts: "x2i-*"
+          body: "Release ${{ steps.tagName.outputs.tag }}"
+
