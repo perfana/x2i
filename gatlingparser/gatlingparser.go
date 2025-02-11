@@ -27,6 +27,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -78,8 +79,10 @@ var (
 	groupLine   = regexp.MustCompile(`GROUP\s`)
 	runLine     = regexp.MustCompile(`^RUN\s`)
 	errorLine   = regexp.MustCompile(`^ERROR\s`)
+	// for checking gatling version
+	gatlingVersion312x = regexp.MustCompile(`3\.12\..*`)
 
-	parserStopped        = make(chan struct{})
+	parserStopped = make(chan struct{})
 )
 
 func lookupTargetDir(ctx context.Context, dir string) error {
@@ -423,6 +426,35 @@ func stringProcessor(lineBuffer []byte) error {
 	}
 }
 
+func detectGatlingLogVersion(file *os.File) (string, error) {
+	defer file.Seek(0, 0)
+	var firstByte byte
+	binary.Read(file, binary.BigEndian, &firstByte)
+	if firstByte == 0 {
+		msg, err := ReadRunMessage(bufio.NewReader(file))
+		if err != nil {
+			return "", err
+		}
+		return msg.GatlingVersion, nil
+	} else {
+		file.Seek(0, 0)
+		reader := bufio.NewReader(file)
+		var line []byte
+		var err error
+		// skip assertion records if they present
+		for line, err = reader.ReadBytes('\n'); runLine.Match(line); {
+			if err != nil {
+				return "", err
+			}
+		}
+		split := bytes.Split(line, tabSep)
+		if len(split) != runLineLen {
+			return "", errors.New("RUN line contains unexpected amount of values")
+		}
+		return string(split[5]), nil
+	}
+}
+
 func fileProcessor(ctx context.Context, file *os.File) {
 	r := bufio.NewReader(file)
 	buf := new(bytes.Buffer)
@@ -472,6 +504,127 @@ ParseLoop:
 	parserStopped <- struct{}{}
 }
 
+func processLogHeader(reader *bufio.Reader) (*RunMessage, []string, error) {
+	var recordType byte
+	err := binary.Read(reader, binary.BigEndian, &recordType)
+	if err != nil {
+		return nil, nil, err
+	}
+	if recordType != 0 {
+		return nil, nil, fmt.Errorf("incorrect gatling log format: header record not found")
+	}
+
+	runMessage, scenarios, _, err := ReadHeader(reader)
+	if err != nil {
+		return &runMessage, scenarios, err
+	}
+
+	l.Infof("Starting collecting for Gatling %s with simulation %s, that started at %s\n",
+		runMessage.GatlingVersion,
+		runMessage.SimulationClassName,
+		time.UnixMilli(runMessage.Start),
+	)
+	l.Infof("Scenarios %s\n", scenarios)
+	return &runMessage, scenarios, nil
+}
+
+func processRemainingRecords(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	reader *bufio.Reader,
+	runMessage RunMessage,
+	scenarios []string,
+	records chan<- interface{},
+) {
+	defer close(records)
+	defer wg.Done()
+
+	for {
+		select {
+		case <-ctx.Done():
+			l.Infoln("Parser received closing signal. Processing stopped")
+			return
+		default:
+			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(time.Duration(waitTime) * time.Second) // Wait if end of file
+					continue
+				}
+				l.Errorf("Reading error: %v", err)
+				continue
+			}
+
+			records <- record
+		}
+	}
+}
+
+func writeRecords(wg *sync.WaitGroup, records <-chan interface{}) {
+	defer wg.Done()
+	for record := range records {
+		switch r := record.(type) {
+		case RunMessage:
+			simulationName = r.SimulationClassName[strings.LastIndex(r.SimulationClassName, ".")+1:]
+			testStartTime := time.Unix(0, r.Start*oneMillisecond+rand.Int63n(oneMillisecond))
+			influx.InitTestInfo(systemUnderTest, testEnvironment, simulationName, r.RunDescription, nodeName, testStartTime)
+			point, err := r.ToInfluxPoint(testStartTime)
+			if err != nil {
+				l.Errorf("Error creating new point with test start data: %v", err)
+			}
+			influx.SendPoint(point)
+
+		case RequestRecord:
+			point, err := r.ToInfluxPoint()
+			if err != nil {
+				l.Errorf("Error creating new point with request data: %v", err)
+			}
+			influx.SendPoint(point)
+
+		case GroupRecord:
+			point, err := r.ToInfluxPoint()
+			if err != nil {
+				l.Errorf("Error creating new point with group data: %v", err)
+			}
+			influx.SendPoint(point)
+
+		case UserRecord:
+			timestamp, scenario, status := r.ToInfluxUserLineParams()
+			influx.SendUserLineData(timestamp, scenario, status)
+
+		case ErrorRecord:
+			point, err := r.ToInfluxPoint()
+			if err != nil {
+				l.Errorf("Error creating new point with error data: %v", err)
+			}
+			influx.SendPoint(point)
+
+		default:
+			l.Errorf("Unknown record type: %T", r)
+		}
+	}
+}
+
+func fileProcessorBinary(ctx context.Context, file *os.File) {
+	defer func() { parserStopped <- struct{}{} }()
+	reader := bufio.NewReader(file)
+	runMessage, scenarios, err := processLogHeader(reader)
+	if err != nil {
+		l.Errorf("Log file %s reading error: %v", file.Name(), err)
+		return
+	}
+
+	wg := &sync.WaitGroup{}
+	records := make(chan interface{}, 10)
+	records <- *runMessage
+
+	wg.Add(2)
+	go processRemainingRecords(ctx, wg, reader, *runMessage, scenarios, records)
+	go writeRecords(wg, records)
+	wg.Wait()
+
+}
+
 func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -482,7 +635,15 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	}
 	defer file.Close()
 
-	fileProcessor(ctx, file)
+	ver, err := detectGatlingLogVersion(file)
+	if err != nil {
+		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
+	}
+	if gatlingVersion312x.MatchString(ver) {
+		fileProcessorBinary(ctx, file)
+	} else {
+		fileProcessor(ctx, file)
+	}
 }
 
 // RunMain performs main application logic
