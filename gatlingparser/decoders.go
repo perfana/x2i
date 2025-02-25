@@ -53,7 +53,9 @@ func ReadString(reader *bufio.Reader) (string, error) {
 	}
 	// skip byte of internal Java string serialization format ('coder' field in String class)
 	reader.ReadByte()
-	return string(strBytes), nil
+	readString := string(strBytes)
+	fmt.Printf("DEBUG: Read string as %q\n", readString)
+	return readString, nil
 }
 
 func ReadSanitizedString(reader *bufio.Reader) (string, error) {

@@ -80,7 +80,7 @@ var (
 	runLine     = regexp.MustCompile(`^RUN\s`)
 	errorLine   = regexp.MustCompile(`^ERROR\s`)
 	// for checking gatling version
-	gatlingVersion312x = regexp.MustCompile(`3\.12\..*`)
+	gatlingVersion313x = regexp.MustCompile(`3\.13\..*`)
 
 	parserStopped = make(chan struct{})
 )
@@ -187,6 +187,12 @@ func waitForLog(ctx context.Context) error {
 			return err
 		}
 		if os.IsNotExist(err) {
+			time.Sleep(loopTimeout)
+			continue
+		}
+
+		// wait till at least first line is present to prevent EOF error
+		if fInfo.Size() < 300 {
 			time.Sleep(loopTimeout)
 			continue
 		}
@@ -422,7 +428,9 @@ func stringProcessor(lineBuffer []byte) error {
 		}
 		return err
 	default:
-		return fmt.Errorf("Unknown line type encountered")
+		// If the line buffer contains unknown characters, convert bytes to hex string for better debugging
+		hexLineBuffer := fmt.Sprintf("%X", lineBuffer)
+		return fmt.Errorf("Unknown line type encountered: %s (hex: %s)", lineBuffer, hexLineBuffer)
 	}
 }
 
@@ -432,6 +440,9 @@ func detectGatlingLogVersion(file *os.File) (string, error) {
 	binary.Read(file, binary.BigEndian, &firstByte)
 	if firstByte == 0 {
 		msg, err := ReadRunMessage(bufio.NewReader(file))
+		if err == io.EOF {
+			return "", fmt.Errorf("The file %s is empty or contains no readable header data: %w", simulationLogFileName, err)
+		}
 		if err != nil {
 			return "", err
 		}
@@ -639,7 +650,7 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	if err != nil {
 		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
 	}
-	if gatlingVersion312x.MatchString(ver) {
+	if gatlingVersion313x.MatchString(ver) {
 		fileProcessorBinary(ctx, file)
 	} else {
 		fileProcessor(ctx, file)
