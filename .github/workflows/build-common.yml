@@ -1,0 +1,35 @@
+# .github/workflows/build-common.yml
+name: Common Build Tasks
+
+on:
+  workflow_call:
+    outputs:
+      artifact-name:
+        description: "x2i binaries"
+        value: x2i-binaries
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.4
+
+      - name: Build
+        run: |
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o x2i-linux-amd64 x2i.go 
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o x2i-linux-arm64 x2i.go 
+          GOOS=windows GOARCH=386 go build -o x2i-windows-386.exe x2i.go
+          GOOS=windows GOARCH=amd64 go build -o x2i-windows-amd64.exe x2i.go
+          GOOS=darwin GOARCH=amd64 go build -o x2i-macos-amd64 x2i.go
+          GOOS=darwin GOARCH=arm64 go build -o x2i-macos-arm64 x2i.go
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: x2i-binaries
+          path: x2i-*
