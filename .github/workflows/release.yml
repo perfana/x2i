@@ -1,0 +1,30 @@
+name: release x2i
+
+on:
+  push:
+    tags:
+      - x2i-*
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-common.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+
+      - uses: olegtarasov/get-tag@v2.1.3
+        id: tagName
+
+      - uses: ncipollo/release-action@v1.14.0
+        with:
+          artifacts: "x2i-*/*"
+          body: "Release ${{ steps.tagName.outputs.tag }}"
