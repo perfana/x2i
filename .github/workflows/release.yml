@@ -26,5 +26,5 @@ jobs:
 
       - uses: ncipollo/release-action@v1.14.0
         with:
-          artifacts: "x2i-*"
+          artifacts: "x2i-*/*"
           body: "Release ${{ steps.tagName.outputs.tag }}"
