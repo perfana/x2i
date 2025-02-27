@@ -441,9 +441,22 @@ func stringProcessor(lineBuffer []byte) error {
 }
 
 func detectGatlingLogVersion(file *os.File) (string, error) {
-	defer file.Seek(0, 0)
+	defer func() {
+		if _, err := file.Seek(0, 0); err != nil {
+			// Log the error or handle it appropriately
+			l.Errorf("Failed to seek to beginning of file: %v", err)
+		}
+	}()
 	var firstByte byte
-	binary.Read(file, binary.BigEndian, &firstByte)
+	if err := binary.Read(file, binary.BigEndian, &firstByte); err != nil {
+		if err == io.EOF {
+			return "", fmt.Errorf("file is empty")
+		}
+		if err == io.ErrUnexpectedEOF {
+			return "", fmt.Errorf("file is truncated")
+		}
+		return "", fmt.Errorf("failed to read first byte: %w", err)
+	}
 	if firstByte == 0 {
 		msg, err := ReadRunMessage(bufio.NewReader(file))
 		if err == io.EOF {
@@ -454,7 +467,9 @@ func detectGatlingLogVersion(file *os.File) (string, error) {
 		}
 		return msg.GatlingVersion, nil
 	} else {
-		file.Seek(0, 0)
+		if offset, err := file.Seek(0, 0); err != nil {
+			return "", fmt.Errorf("failed to seek to beginning of file (offset %d): %w", offset, err)
+		}
 		reader := bufio.NewReader(file)
 		var line []byte
 		var err error
@@ -650,7 +665,11 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	if err != nil {
 		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			l.Errorf("Failed to close file: %v", err)
+		}
+	}()
 
 	ver, err := detectGatlingLogVersion(file)
 	if err != nil {
