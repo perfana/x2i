@@ -88,7 +88,9 @@ var (
 func lookupTargetDir(ctx context.Context, dir string) error {
 	const loopTimeout = 5 * time.Second
 
-	l.Infoln("Looking for target directory...")
+	cleanDir := filepath.Clean(filepath.FromSlash(dir))
+
+	l.Infoln("Looking for target directory... %s", cleanDir)
 	for {
 		// This block checks if stop signal is received from user
 		// and stops further lookup
@@ -98,20 +100,25 @@ func lookupTargetDir(ctx context.Context, dir string) error {
 		default:
 		}
 
-		fInfo, err := os.Stat(dir)
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("Target path %s exists but there is an error: %w", dir, err)
-		}
-		if os.IsNotExist(err) {
-			time.Sleep(loopTimeout)
-			continue
+		fInfo, err := os.Stat(cleanDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				time.Sleep(loopTimeout)
+				continue
+			}
+			// Log the specific error type to help diagnose issues
+			return fmt.Errorf("error accessing path %s (error type: %T): %w", dir, err, err)
 		}
 
 		if !fInfo.IsDir() {
-			return fmt.Errorf("Was expecting directory at %s, but found a file", dir)
+			return fmt.Errorf("was expecting directory at %s, but found a file", dir)
 		}
 
-		abs, _ := filepath.Abs(dir)
+		abs, err := filepath.Abs(cleanDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for %s: %w", dir, err)
+		}
+
 		l.Infof("Target directory found at %s", abs)
 		break
 	}
