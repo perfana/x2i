@@ -120,6 +120,12 @@ func lookupTargetDir(ctx context.Context, dir string) error {
 }
 
 func walkFunc(path string, info os.FileInfo, err error) error {
+	// First check if there was an error accessing the file/directory
+	if err != nil {
+		// Either log the error and continue, or return it to stop walking
+		l.Errorf("Error accessing path %s: %v", path, err)
+		return nil // or return err if you want to stop walking
+	}
 
 	if info.IsDir() && resultDirNamePattern.MatchString(info.Name()) {
 		l.Debugf("Found directory '%s' with mod time %s (start time: %s)", path, info.ModTime().String(), time.Unix(startTime, 0).String())
@@ -145,7 +151,7 @@ func walkFunc(path string, info os.FileInfo, err error) error {
 func lookupResultsDir(ctx context.Context, dir string) error {
 	const loopTimeout = 5 * time.Second
 
-	l.Infof("Searching for results directory...")
+	l.Infof("Searching for results directory in %s...", dir)
 	for {
 		// This block checks if stop signal is received from user
 		// and stops further lookup
