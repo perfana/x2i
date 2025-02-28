@@ -90,7 +90,7 @@ func lookupTargetDir(ctx context.Context, dir string) error {
 
 	cleanDir := filepath.Clean(filepath.FromSlash(dir))
 
-	l.Infoln("Looking for target directory... %s", cleanDir)
+	l.Infof("Looking for target directory... %s", cleanDir)
 	for {
 		// This block checks if stop signal is received from user
 		// and stops further lookup
@@ -169,11 +169,11 @@ func lookupResultsDir(ctx context.Context, dir string) error {
 		}
 
 		err := filepath.Walk(dir, walkFunc)
-		if err == errFound {
+		if errors.Is(err, errFound) {
 			break
 		}
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to walk directory %s: %w", dir, err)
 		}
 
 		time.Sleep(loopTimeout)
@@ -195,13 +195,14 @@ func waitForLog(ctx context.Context) error {
 		default:
 		}
 
-		fInfo, err := os.Stat(logDir + "/" + simulationLogFileName)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if os.IsNotExist(err) {
-			time.Sleep(loopTimeout)
-			continue
+		logFile := filepath.Join(logDir, simulationLogFileName)
+		fInfo, err := os.Stat(logFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				time.Sleep(loopTimeout)
+				continue
+			}
+			return fmt.Errorf("failed to stat simulation log file %s: %w", logFile, err)
 		}
 
 		// wait till at least first line is present to prevent EOF error
@@ -210,14 +211,29 @@ func waitForLog(ctx context.Context) error {
 			continue
 		}
 
-		// WARNING: second part of this check may fail on Windows. Not tested
-		if fInfo.Mode().IsRegular() && (runtime.GOOS == "windows" || fInfo.Mode().Perm() == 420) {
-			abs, _ := filepath.Abs(logDir + "/" + simulationLogFileName)
-			l.Infof("Found %s\n", abs)
+		abs, err := filepath.Abs(logFile)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for %s: %w", logFile, err)
+		}
+
+		if !fInfo.Mode().IsRegular() {
+			time.Sleep(loopTimeout)
+			continue
+		}
+
+		// Check file permissions
+		isReadable := true
+		if runtime.GOOS != "windows" {
+			// On Unix-like systems, check for read permission (0644 = 420 in decimal)
+			isReadable = fInfo.Mode().Perm()&0644 == 0644
+		}
+
+		if isReadable {
+			l.Infof("Found log file at %s", abs)
 			break
 		}
 
-		return errors.New("Something wrong happened when attempting to open " + simulationLogFileName)
+		return errors.New("something wrong happened when attempting to open " + simulationLogFileName)
 	}
 
 	return nil
