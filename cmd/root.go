@@ -32,11 +32,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/perfana/x2i/influx"
-	l "github.com/perfana/x2i/logger"
 	"github.com/perfana/x2i/gatlingparser"
+	"github.com/perfana/x2i/influx"
 	"github.com/perfana/x2i/jmeterparser"
 	"github.com/perfana/x2i/k6parser"
+	l "github.com/perfana/x2i/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -89,20 +89,20 @@ func preRunSetup(cmd *cobra.Command, args []string) error {
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use: "x2i [path/to/results/dir]",
+	Use:     "x2i [path/to/results/dir]",
 	Example: "x2i [path]/target/gatling -i gatling -d -b gatling\nx2i [path]/target/jmeter/results -i jmeter -d -b jmeter\nx2i [path] -i k6 -d -b k6",
-	Short: "\nWrite Gatling, JMeter or K6 logs directly to InfluxDB.\n\nMore info at https://github.com/perfana/x2i",
-	Version: "v1.0.0",
+	Short:   "\nWrite Gatling, JMeter or K6 logs directly to InfluxDB.\n\nMore info at https://github.com/perfana/x2i",
+	Version: "v1.1.0-beta-gatling-binary-log",
 	PreRunE: preRunSetup,
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-	    i, _ := cmd.Flags().GetString("testtool")
-	    if i == "jmeter" {
-	      jmeterparser.RunMain(cmd, args[0])
-	    } else if i == "k6" {
-	      k6parser.RunMain(cmd, args[0])
-	    } else {
-		  gatlingparser.RunMain(cmd, args[0])
+		i, _ := cmd.Flags().GetString("testtool")
+		if i == "jmeter" {
+			jmeterparser.RunMain(cmd, args[0])
+		} else if i == "k6" {
+			k6parser.RunMain(cmd, args[0])
+		} else {
+			gatlingparser.RunMain(cmd, args[0])
 		}
 	},
 }
