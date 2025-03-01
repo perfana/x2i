@@ -458,8 +458,13 @@ func stringProcessor(lineBuffer []byte) error {
 		return err
 	default:
 		// If the line buffer contains unknown characters, convert bytes to hex string for better debugging
-		hexLineBuffer := fmt.Sprintf("%X", lineBuffer)
-		return fmt.Errorf("Unknown line type encountered: %s (hex: %s)", lineBuffer, hexLineBuffer)
+		// hexLineBuffer := fmt.Sprintf("%X", lineBuffer)
+		//return fmt.Errorf("Unknown line type encountered: %s (hex: %s)", lineBuffer, hexLineBuffer)
+		// If string is longer than 24 chars, truncate it
+		if len(lineBuffer) > 24 {
+			lineBuffer = lineBuffer[:24]
+		}
+		return fmt.Errorf("Unknown line type encountered: %s", lineBuffer)
 	}
 }
 
@@ -471,7 +476,7 @@ func detectGatlingLogVersion(file *os.File) (string, error) {
 		}
 	}()
 	var firstByte byte
-	if err := binary.Read(file, binary.BigEndian, &firstByte); err != nil {
+	if err := binary.Read(file, currentByteOrder(), &firstByte); err != nil {
 		if err == io.EOF {
 			return "", fmt.Errorf("file is empty")
 		}
@@ -561,7 +566,7 @@ ParseLoop:
 
 func processLogHeader(reader *bufio.Reader) (*RunMessage, []string, error) {
 	var recordType byte
-	err := binary.Read(reader, binary.BigEndian, &recordType)
+	err := binary.Read(reader, currentByteOrder(), &recordType)
 	if err != nil {
 		return nil, nil, err
 	}

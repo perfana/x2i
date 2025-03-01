@@ -18,13 +18,26 @@ const (
 
 func ReadInt(reader *bufio.Reader) (int32, error) {
 	var int32Value int32
-	err := binary.Read(reader, binary.BigEndian, &int32Value)
+	err := binary.Read(reader, currentByteOrder(), &int32Value)
 	return int32Value, err
+}
+
+func currentByteOrder() binary.ByteOrder {
+	var order binary.ByteOrder = binary.BigEndian
+	//if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+	//	order = binary.LittleEndian
+	//}
+	//l.Debugf("Using byte order: %v for OS: %s, ARCH: %s",
+	//	order == binary.LittleEndian,
+	//	runtime.GOOS,
+	//	runtime.GOARCH,
+	//)
+	return order
 }
 
 func ReadLong(reader *bufio.Reader) (int64, error) {
 	var int64Value int64
-	err := binary.Read(reader, binary.BigEndian, &int64Value)
+	err := binary.Read(reader, currentByteOrder(), &int64Value)
 	return int64Value, err
 }
 
@@ -43,6 +56,10 @@ func ReadString(reader *bufio.Reader) (string, error) {
 	}
 
 	if strLength < 0 {
+		return "", fmt.Errorf("invalid string length: %d", strLength)
+	}
+
+	if strLength > 2000 {
 		return "", fmt.Errorf("invalid string length: %d", strLength)
 	}
 
@@ -191,16 +208,24 @@ func ReadHeader(reader *bufio.Reader) (RunMessage, []string, [][]byte, error) {
 }
 
 func ReadGroup(reader *bufio.Reader) (*Group, error) {
+	const maxHierarchyLength = 2000 // adjust to needs
+
 	hierarchyLength, err := ReadInt(reader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read hierarchy length: %w", err)
+	}
+
+	// Validate the length before allocating slice
+	if hierarchyLength < 0 || hierarchyLength > maxHierarchyLength {
+		return nil, fmt.Errorf("invalid hierarchy length: %d (must be between 0 and %d)",
+			hierarchyLength, maxHierarchyLength)
 	}
 
 	hierarchy := make([]string, hierarchyLength)
 	for i := int32(0); i < hierarchyLength; i++ {
 		hierarchy[i], err = ReadCachedSanitizedString(reader)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read hierarchy element %d: %w", i, err)
 		}
 	}
 
