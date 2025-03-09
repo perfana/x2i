@@ -44,6 +44,7 @@ import (
 	"github.com/perfana/x2i/influx"
 	l "github.com/perfana/x2i/logger"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -79,8 +80,6 @@ var (
 	groupLine   = regexp.MustCompile(`GROUP\s`)
 	runLine     = regexp.MustCompile(`^RUN\s`)
 	errorLine   = regexp.MustCompile(`^ERROR\s`)
-	// for checking gatling version
-	gatlingVersion313x = regexp.MustCompile(`3\.13\..*`)
 
 	parserStopped = make(chan struct{})
 )
@@ -703,7 +702,10 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	if err != nil {
 		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
 	}
-	if gatlingVersion313x.MatchString(ver) {
+	if !semver.IsValid(ver) {
+		ver = "v" + ver
+	}
+	if semver.Compare(ver, "v3.12.1") >= 0 {
 		fileProcessorBinary(ctx, file)
 	} else {
 		fileProcessor(ctx, file)
