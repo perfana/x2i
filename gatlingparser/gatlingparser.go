@@ -44,6 +44,7 @@ import (
 	"github.com/perfana/x2i/influx"
 	l "github.com/perfana/x2i/logger"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -79,8 +80,6 @@ var (
 	groupLine   = regexp.MustCompile(`GROUP\s`)
 	runLine     = regexp.MustCompile(`^RUN\s`)
 	errorLine   = regexp.MustCompile(`^ERROR\s`)
-	// for checking gatling version
-	gatlingVersion313x = regexp.MustCompile(`3\.13\..*`)
 
 	parserStopped = make(chan struct{})
 )
@@ -596,8 +595,12 @@ func processRemainingRecords(
 	scenarios []string,
 	records chan<- interface{},
 ) {
-	defer close(records)
-	defer wg.Done()
+	defer func() {
+		close(records)
+		wg.Done()
+	}()
+
+	latestReadTime := time.Now()
 
 	for {
 		select {
@@ -608,7 +611,12 @@ func processRemainingRecords(
 			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
 			if err != nil {
 				if err == io.EOF {
-					time.Sleep(time.Duration(waitTime) * time.Second) // Wait if end of file
+					// If no new data read for more than value provided by 'stop-timeout' key then processing is stopped
+					if time.Now().After(latestReadTime.Add(time.Duration(waitTime) * time.Second)) {
+						l.Infof("No new entries found for %d seconds. Stopping application...", waitTime)
+						return
+					}
+					time.Sleep(time.Second) // Wait if end of file
 					continue
 				}
 				l.Errorf("Reading error: %v", err)
@@ -616,11 +624,18 @@ func processRemainingRecords(
 			}
 
 			records <- record
+			latestReadTime = time.Now()
 		}
 	}
 }
 
-func writeRecords(wg *sync.WaitGroup, records <-chan interface{}) {
+type RecordsWriter interface {
+	writeAll(wg *sync.WaitGroup, records <-chan interface{})
+}
+
+type InfluxRecordsWriter struct{}
+
+func (w *InfluxRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interface{}) {
 	defer wg.Done()
 	for record := range records {
 		switch r := record.(type) {
@@ -665,7 +680,45 @@ func writeRecords(wg *sync.WaitGroup, records <-chan interface{}) {
 	}
 }
 
-func fileProcessorBinary(ctx context.Context, file *os.File) {
+type SumRecordsWriter struct{}
+
+func (w *SumRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interface{}) {
+	defer wg.Done()
+	var (
+		users       = 0
+		reqs        = 0
+		rumMessages = 0
+		errors      = 0
+		groups      = 0
+	)
+
+	for record := range records {
+		// l.Infoln(record)
+		switch r := record.(type) {
+		case RunMessage:
+			rumMessages += 1
+
+		case RequestRecord:
+			reqs += 1
+
+		case GroupRecord:
+			groups += 1
+
+		case UserRecord:
+			users += 1
+
+		case ErrorRecord:
+			errors += 1
+
+		default:
+			l.Errorf("Unknown record type: %T", r)
+		}
+
+	}
+	l.Debugf("msg = %d, users = %d, reqs = %d, groups = %d, errors = %d\n", rumMessages, users, reqs, groups, errors)
+}
+
+func fileProcessorBinary(ctx context.Context, file *os.File, recordsWriter  RecordsWriter) {
 	defer func() { parserStopped <- struct{}{} }()
 	reader := bufio.NewReader(file)
 	runMessage, scenarios, err := processLogHeader(reader)
@@ -675,14 +728,13 @@ func fileProcessorBinary(ctx context.Context, file *os.File) {
 	}
 
 	wg := &sync.WaitGroup{}
-	records := make(chan interface{}, 10)
+	records := make(chan interface{}, 100)
 	records <- *runMessage
 
 	wg.Add(2)
 	go processRemainingRecords(ctx, wg, reader, *runMessage, scenarios, records)
-	go writeRecords(wg, records)
+	go recordsWriter.writeAll(wg, records)
 	wg.Wait()
-
 }
 
 func parseStart(ctx context.Context, wg *sync.WaitGroup) {
@@ -703,8 +755,12 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	if err != nil {
 		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
 	}
-	if gatlingVersion313x.MatchString(ver) {
-		fileProcessorBinary(ctx, file)
+	if !semver.IsValid(ver) {
+		ver = "v" + ver
+	}
+	if semver.Compare(ver, "v3.12.1") >= 0 {
+		writer := InfluxRecordsWriter{}
+		fileProcessorBinary(ctx, file, &writer)
 	} else {
 		fileProcessor(ctx, file)
 	}

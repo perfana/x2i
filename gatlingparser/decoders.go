@@ -3,9 +3,13 @@ package gatlingparser
 import (
 	"bufio"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"strings"
+
+	l "github.com/perfana/x2i/logger"
 )
 
 const (
@@ -366,7 +370,15 @@ func ReadErrorRecord(reader *bufio.Reader, runStartTimestamp int64) (ErrorRecord
 }
 
 func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenarios []string) (interface{}, error) {
-	recordType, err := reader.ReadByte()
+	headBytes, err := reader.Peek(8)
+	if err == io.EOF {
+		return nil, err
+	}
+	if err != nil {
+		return nil, fmt.Errorf("could not read bytes from log file - %v", err)
+	}
+	var recordType byte
+	recordType, err = reader.ReadByte()
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +393,7 @@ func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenario
 	case ErrorRecordType:
 		return ReadErrorRecord(reader, runStartTimestapm)
 	default:
+		l.Debugf("Unknown record start fragment: %s\n", hex.EncodeToString(headBytes))
 		return nil, fmt.Errorf("unknown record type: %d", recordType)
 	}
 }
