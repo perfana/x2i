@@ -588,37 +588,6 @@ func processLogHeader(reader *bufio.Reader) (*RunMessage, []string, error) {
 	return &runMessage, scenarios, nil
 }
 
-func processRemainingRecords(
-	ctx context.Context,
-	wg *sync.WaitGroup,
-	reader *bufio.Reader,
-	runMessage RunMessage,
-	scenarios []string,
-	records chan<- interface{},
-) {
-	defer close(records)
-	defer wg.Done()
-
-	for {
-		select {
-		case <-ctx.Done():
-			l.Infoln("Parser received closing signal. Processing stopped")
-			return
-		default:
-			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
-			if err != nil {
-				if err == io.EOF {
-					time.Sleep(time.Duration(waitTime) * time.Second) // Wait if end of file
-					continue
-				}
-				l.Errorf("Reading error: %v", err)
-				continue
-			}
-
-			records <- record
-		}
-	}
-}
 
 func writeRecords(wg *sync.WaitGroup, records <-chan interface{}) {
 	defer wg.Done()
@@ -633,7 +602,6 @@ func writeRecords(wg *sync.WaitGroup, records <-chan interface{}) {
 				l.Errorf("Error creating new point with test start data: %v", err)
 			}
 			influx.SendPoint(point)
-
 		case RequestRecord:
 			point, err := r.ToInfluxPoint()
 			if err != nil {
@@ -665,8 +633,48 @@ func writeRecords(wg *sync.WaitGroup, records <-chan interface{}) {
 	}
 }
 
+func processRemainingRecords(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	reader *bufio.Reader,
+	runMessage RunMessage,
+	scenarios []string,
+	records chan<- interface{},
+	activity chan<- struct{},
+) {
+	defer close(records)
+	defer wg.Done()
+
+	for {
+		select {
+		case <-ctx.Done():
+			l.Infoln("Parser received closing signal. Processing stopped")
+			return
+		default:
+			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(500 * time.Millisecond) // Wait if end of file
+					continue
+				}
+				l.Errorf("Reading error: %v", err)
+				continue
+			}
+
+			// Signal activity when new record is read
+			activity <- struct{}{}
+			records <- record
+		}
+	}
+}
+
 func fileProcessorBinary(ctx context.Context, file *os.File) {
 	defer func() { parserStopped <- struct{}{} }()
+
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	reader := bufio.NewReader(file)
 	runMessage, scenarios, err := processLogHeader(reader)
 	if err != nil {
@@ -678,13 +686,36 @@ func fileProcessorBinary(ctx context.Context, file *os.File) {
 	records := make(chan interface{}, 10)
 	records <- *runMessage
 
+	activity := make(chan struct{}, 1) // Buffer of 1 to prevent blocking
+
 	wg.Add(2)
-	go processRemainingRecords(ctx, wg, reader, *runMessage, scenarios, records)
+	go processRemainingRecords(ctx, wg, reader, *runMessage, scenarios, records, activity)
 	go writeRecords(wg, records)
+
+	// Start timeout monitor
+	go func() {
+		startWait := time.Now()
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-activity:
+				startWait = time.Now()
+			case <-ticker.C:
+				if time.Now().After(startWait.Add(time.Duration(waitTime) * time.Second)) {
+					l.Infof("No new lines found for %d seconds. Stopping application...", waitTime)
+					cancel()
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	wg.Wait()
-
 }
-
 func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
