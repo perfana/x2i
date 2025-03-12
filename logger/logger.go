@@ -34,9 +34,9 @@ import (
 type LogLevel int
 
 const (
-	DEBUG LogLevel = iota
-	INFO
+	INFO LogLevel = iota
 	ERROR
+	DEBUG
 )
 
 var (
@@ -74,19 +74,20 @@ func SetLogLevel(level LogLevel) {
 }
 
 func Errorln(v ...interface{}) {
-	// ERROR level always shows
-	logger.SetOutput(ew)
-	logger.SetPrefix("ERROR ")
-	logger.Println(v...)
+	if logLevel >= ERROR {
+		logger.SetOutput(ew)
+		logger.SetPrefix("ERROR ")
+		logger.Println(v...)
+	}
 }
 
 func Errorf(format string, v ...interface{}) {
-	// ERROR level always shows
-	logger.SetOutput(ew)
-	logger.SetPrefix("ERROR ")
-	logger.Printf(format, v...)
+	if logLevel >= ERROR {
+		logger.SetOutput(ew)
+		logger.SetPrefix("ERROR ")
+		logger.Printf(format, v...)
+	}
 }
-
 func Infoln(v ...interface{}) {
 	if logLevel >= INFO {
 		logger.SetOutput(sw)
@@ -104,7 +105,7 @@ func Infof(format string, v ...interface{}) {
 }
 
 func Debugln(v ...interface{}) {
-	if logLevel <= DEBUG {
+	if logLevel >= DEBUG {
 		logger.SetOutput(sw)
 		logger.SetPrefix("DEBUG ")
 		logger.Println(v...)
@@ -112,7 +113,7 @@ func Debugln(v ...interface{}) {
 }
 
 func Debugf(format string, v ...interface{}) {
-	if logLevel <= DEBUG {
+	if logLevel >= DEBUG {
 		logger.SetOutput(sw)
 		logger.SetPrefix("DEBUG ")
 		logger.Printf(format, v...)
