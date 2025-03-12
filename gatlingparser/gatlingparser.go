@@ -591,16 +591,16 @@ func processRemainingRecords(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	reader *bufio.Reader,
+	file *os.File,
 	runMessage RunMessage,
 	scenarios []string,
 	records chan<- interface{},
 ) {
-	defer func() {
-		close(records)
-		wg.Done()
-	}()
+	defer close(records)
+	defer wg.Done()
 
 	latestReadTime := time.Now()
+	lastSize := int64(0)
 
 	for {
 		select {
@@ -608,27 +608,26 @@ func processRemainingRecords(
 			l.Infoln("Parser received closing signal. Processing stopped")
 			return
 		default:
-			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
-			if err != nil {
-				if err == io.EOF {
-					// If no new data read for more than value provided by 'stop-timeout' key then processing is stopped
-					if time.Now().After(latestReadTime.Add(time.Duration(waitTime) * time.Second)) {
-						l.Infof("No new entries found for %d seconds. Stopping application...", waitTime)
-						return
-					}
-					time.Sleep(time.Second) // Wait if end of file
-					continue
+			// Check file size
+			if stat, _ := file.Stat(); stat.Size() == lastSize {
+				if time.Now().After(latestReadTime.Add(time.Duration(waitTime) * time.Second)) {
+					l.Infof("File size unchanged for %d seconds. Stopping application...", waitTime)
+					return
 				}
-				l.Errorf("Reading error: %v", err)
-				continue
+			} else {
+				lastSize = stat.Size()
+				latestReadTime = time.Now()
 			}
 
+			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
+			if err != nil {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
 			records <- record
-			latestReadTime = time.Now()
 		}
 	}
 }
-
 type RecordsWriter interface {
 	writeAll(wg *sync.WaitGroup, records <-chan interface{})
 }
@@ -718,9 +717,10 @@ func (w *SumRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interface
 	l.Debugf("msg = %d, users = %d, reqs = %d, groups = %d, errors = %d\n", rumMessages, users, reqs, groups, errors)
 }
 
-func fileProcessorBinary(ctx context.Context, file *os.File, recordsWriter  RecordsWriter) {
+func fileProcessorBinary(ctx context.Context, file *os.File, recordsWriter RecordsWriter) {
 	defer func() { parserStopped <- struct{}{} }()
 	reader := bufio.NewReader(file)
+
 	runMessage, scenarios, err := processLogHeader(reader)
 	if err != nil {
 		l.Errorf("Log file %s reading error: %v", file.Name(), err)
@@ -732,7 +732,7 @@ func fileProcessorBinary(ctx context.Context, file *os.File, recordsWriter  Reco
 	records <- *runMessage
 
 	wg.Add(2)
-	go processRemainingRecords(ctx, wg, reader, *runMessage, scenarios, records)
+	go processRemainingRecords(ctx, wg, reader, file, *runMessage, scenarios, records)
 	go recordsWriter.writeAll(wg, records)
 	wg.Wait()
 }
