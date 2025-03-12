@@ -124,7 +124,7 @@ SendLoop:
 		return
 	}
 
-	l.Debugf("Successfully written %d points to DB\n", len(points))
+	l.Infof("Successfully written %d points to DB\n", len(points))
 }
 
 // SendUserLineData takes a line with user data and adds it to the processing list
