@@ -370,7 +370,7 @@ func ReadErrorRecord(reader *bufio.Reader, runStartTimestamp int64) (ErrorRecord
 }
 
 func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenarios []string) (interface{}, error) {
-	headBytes, err := reader.Peek(8)
+	headBytes, err := reader.Peek(16)
 	if err == io.EOF {
 		return nil, err
 	}
