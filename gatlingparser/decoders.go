@@ -393,7 +393,7 @@ func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenario
 	case ErrorRecordType:
 		return ReadErrorRecord(reader, runStartTimestapm)
 	default:
-		l.Debugf("Unknown record start fragment: %s\n", hex.EncodeToString(headBytes))
+		l.Errorf("Unknown record start fragment: %s\n", hex.EncodeToString(headBytes))
 		return nil, fmt.Errorf("unknown record type: %d", recordType)
 	}
 }
