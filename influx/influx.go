@@ -26,6 +26,7 @@ package influx
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"runtime"
 	"sync"
 	"time"
@@ -83,9 +84,10 @@ func InitTestInfo(systemUnderTest, testEnvironment, simulationName, description,
 // NewPoint is mostly an alias fo standard NewPoint function from influx package,
 // except timestamp is required
 func NewPoint(name string, tags map[string]string, fields map[string]interface{}, t time.Time) (*infc.Point, error) {
-	return infc.NewPoint(name, tags, fields, t)
+	// Add nanosecond-level random offset to prevent exact timestamp collisions
+	uniqueTime := t.Add(time.Duration(rand.Int63n(1000000)) * time.Nanosecond)
+	return infc.NewPoint(name, tags, fields, uniqueTime)
 }
-
 // SendPoint sends point to the channel listened by metrics consumer
 func SendPoint(p *infc.Point) {
 	pc <- p
