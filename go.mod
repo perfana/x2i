@@ -1,6 +1,6 @@
 module github.com/perfana/x2i
 
-go 1.23
+go 1.23.7
 
 require (
 	github.com/influxdata/influxdb1-client v0.0.0-20220302092344-a9ab5670611c
