@@ -44,6 +44,7 @@ import (
 	"github.com/perfana/x2i/influx"
 	l "github.com/perfana/x2i/logger"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -79,8 +80,6 @@ var (
 	groupLine   = regexp.MustCompile(`GROUP\s`)
 	runLine     = regexp.MustCompile(`^RUN\s`)
 	errorLine   = regexp.MustCompile(`^ERROR\s`)
-	// for checking gatling version
-	gatlingVersion313x = regexp.MustCompile(`3\.13\..*`)
 
 	parserStopped = make(chan struct{})
 )
@@ -592,6 +591,7 @@ func processRemainingRecords(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	reader *bufio.Reader,
+	file *os.File,
 	runMessage RunMessage,
 	scenarios []string,
 	records chan<- interface{},
@@ -599,28 +599,42 @@ func processRemainingRecords(
 	defer close(records)
 	defer wg.Done()
 
+	latestReadTime := time.Now()
+	lastSize := int64(0)
+
 	for {
 		select {
 		case <-ctx.Done():
 			l.Infoln("Parser received closing signal. Processing stopped")
 			return
 		default:
-			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
-			if err != nil {
-				if err == io.EOF {
-					time.Sleep(time.Duration(waitTime) * time.Second) // Wait if end of file
-					continue
+			// Check file size
+			if stat, _ := file.Stat(); stat.Size() == lastSize {
+				if time.Now().After(latestReadTime.Add(time.Duration(waitTime) * time.Second)) {
+					l.Infof("File size unchanged for %d seconds. Stopping application...", waitTime)
+					return
 				}
-				l.Errorf("Reading error: %v", err)
-				continue
+			} else {
+				lastSize = stat.Size()
+				latestReadTime = time.Now()
 			}
 
+			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
+			if err != nil {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
 			records <- record
 		}
 	}
 }
+type RecordsWriter interface {
+	writeAll(wg *sync.WaitGroup, records <-chan interface{})
+}
 
-func writeRecords(wg *sync.WaitGroup, records <-chan interface{}) {
+type InfluxRecordsWriter struct{}
+
+func (w *InfluxRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interface{}) {
 	defer wg.Done()
 	for record := range records {
 		switch r := record.(type) {
@@ -665,9 +679,48 @@ func writeRecords(wg *sync.WaitGroup, records <-chan interface{}) {
 	}
 }
 
-func fileProcessorBinary(ctx context.Context, file *os.File) {
+type SumRecordsWriter struct{}
+
+func (w *SumRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interface{}) {
+	defer wg.Done()
+	var (
+		users       = 0
+		reqs        = 0
+		rumMessages = 0
+		errors      = 0
+		groups      = 0
+	)
+
+	for record := range records {
+		// l.Infoln(record)
+		switch r := record.(type) {
+		case RunMessage:
+			rumMessages += 1
+
+		case RequestRecord:
+			reqs += 1
+
+		case GroupRecord:
+			groups += 1
+
+		case UserRecord:
+			users += 1
+
+		case ErrorRecord:
+			errors += 1
+
+		default:
+			l.Errorf("Unknown record type: %T", r)
+		}
+
+	}
+	l.Debugf("msg = %d, users = %d, reqs = %d, groups = %d, errors = %d\n", rumMessages, users, reqs, groups, errors)
+}
+
+func fileProcessorBinary(ctx context.Context, file *os.File, recordsWriter RecordsWriter) {
 	defer func() { parserStopped <- struct{}{} }()
 	reader := bufio.NewReader(file)
+
 	runMessage, scenarios, err := processLogHeader(reader)
 	if err != nil {
 		l.Errorf("Log file %s reading error: %v", file.Name(), err)
@@ -675,14 +728,13 @@ func fileProcessorBinary(ctx context.Context, file *os.File) {
 	}
 
 	wg := &sync.WaitGroup{}
-	records := make(chan interface{}, 10)
+	records := make(chan interface{}, 100)
 	records <- *runMessage
 
 	wg.Add(2)
-	go processRemainingRecords(ctx, wg, reader, *runMessage, scenarios, records)
-	go writeRecords(wg, records)
+	go processRemainingRecords(ctx, wg, reader, file, *runMessage, scenarios, records)
+	go recordsWriter.writeAll(wg, records)
 	wg.Wait()
-
 }
 
 func parseStart(ctx context.Context, wg *sync.WaitGroup) {
@@ -703,8 +755,12 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	if err != nil {
 		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
 	}
-	if gatlingVersion313x.MatchString(ver) {
-		fileProcessorBinary(ctx, file)
+	if !semver.IsValid(ver) {
+		ver = "v" + ver
+	}
+	if semver.Compare(ver, "v3.12.1") >= 0 {
+		writer := InfluxRecordsWriter{}
+		fileProcessorBinary(ctx, file, &writer)
 	} else {
 		fileProcessor(ctx, file)
 	}
