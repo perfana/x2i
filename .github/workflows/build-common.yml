@@ -28,38 +28,8 @@ jobs:
           GOOS=darwin GOARCH=amd64 go build -o x2i-macos-amd64 x2i.go
           GOOS=darwin GOARCH=arm64 go build -o x2i-macos-arm64 x2i.go
 
-      - name: Upload Linux AMD64
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: x2i-linux-amd64
-          path: x2i-linux-amd64
-
-      - name: Upload Linux ARM64
-        uses: actions/upload-artifact@v4
-        with:
-          name: x2i-linux-arm64
-          path: x2i-linux-arm64
-
-      - name: Upload Windows 386
-        uses: actions/upload-artifact@v4
-        with:
-          name: x2i-windows-386
-          path: x2i-windows-386.exe
-
-      - name: Upload Windows AMD64
-        uses: actions/upload-artifact@v4
-        with:
-          name: x2i-windows-amd64
-          path: x2i-windows-amd64.exe
-
-      - name: Upload macOS AMD64
-        uses: actions/upload-artifact@v4
-        with:
-          name: x2i-macos-amd64
-          path: x2i-macos-amd64
-
-      - name: Upload macOS ARM64
-        uses: actions/upload-artifact@v4
-        with:
-          name: x2i-macos-arm64
-          path: x2i-macos-arm64
+          name: x2i-binaries
+          path: x2i-*
