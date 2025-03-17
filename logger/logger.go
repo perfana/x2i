@@ -31,12 +31,19 @@ import (
 	"path/filepath"
 )
 
-// that will add prefixes to log lines
+type LogLevel int
+
+const (
+	INFO LogLevel = iota
+	ERROR
+	DEBUG
+)
+
 var (
-	// logger is a single local logger implementation
-	logger *log.Logger
-	sw     io.Writer
-	ew     io.Writer
+	logger    *log.Logger
+	sw        io.Writer
+	ew        io.Writer
+	logLevel  LogLevel = INFO // Default to INFO level
 )
 
 // InitLogger sets up a new instance of logger that writes to file and STDOUT
@@ -62,44 +69,53 @@ func InitLogger(fileName string) error {
 	return nil
 }
 
-// Errorln writes a line to STDERR and log file prepending message with ERROR
+func SetLogLevel(level LogLevel) {
+	logLevel = level
+}
+
 func Errorln(v ...interface{}) {
-	logger.SetOutput(ew)
-	logger.SetPrefix("ERROR ")
-	logger.Println(v...)
+	if logLevel >= ERROR {
+		logger.SetOutput(ew)
+		logger.SetPrefix("ERROR ")
+		logger.Println(v...)
+	}
 }
 
-// Errorf writes a formatted output to STDERR and log file prepending message with ERROR
 func Errorf(format string, v ...interface{}) {
-	logger.SetOutput(ew)
-	logger.SetPrefix("ERROR ")
-	logger.Printf(format, v...)
+	if logLevel >= ERROR {
+		logger.SetOutput(ew)
+		logger.SetPrefix("ERROR ")
+		logger.Printf(format, v...)
+	}
 }
-
-// Infoln writes a line to STDERR and log file prepending message with INFO
 func Infoln(v ...interface{}) {
-	logger.SetOutput(sw)
-	logger.SetPrefix("INFO ")
-	logger.Println(v...)
+	if logLevel >= INFO {
+		logger.SetOutput(sw)
+		logger.SetPrefix("INFO ")
+		logger.Println(v...)
+	}
 }
 
-// Infof writes a formatted output to STDERR and log file prepending message with INFO
 func Infof(format string, v ...interface{}) {
-	logger.SetOutput(sw)
-	logger.SetPrefix("INFO ")
-	logger.Printf(format, v...)
+	if logLevel >= INFO {
+		logger.SetOutput(sw)
+		logger.SetPrefix("INFO ")
+		logger.Printf(format, v...)
+	}
 }
 
-// Debugln writes a line to STDERR and log file prepending message with DEBUG
 func Debugln(v ...interface{}) {
-	logger.SetOutput(sw)
-	logger.SetPrefix("DEBUG ")
-	logger.Println(v...)
+	if logLevel >= DEBUG {
+		logger.SetOutput(sw)
+		logger.SetPrefix("DEBUG ")
+		logger.Println(v...)
+	}
 }
 
-// Debugf writes a formatted output to STDERR and log file prepending message with DEBUG
 func Debugf(format string, v ...interface{}) {
-	logger.SetOutput(sw)
-	logger.SetPrefix("DEBUG ")
-	logger.Printf(format, v...)
+	if logLevel >= DEBUG {
+		logger.SetOutput(sw)
+		logger.SetPrefix("DEBUG ")
+		logger.Printf(format, v...)
+	}
 }

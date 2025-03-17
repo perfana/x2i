@@ -26,6 +26,7 @@ package influx
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"runtime"
 	"sync"
 	"time"
@@ -83,9 +84,10 @@ func InitTestInfo(systemUnderTest, testEnvironment, simulationName, description,
 // NewPoint is mostly an alias fo standard NewPoint function from influx package,
 // except timestamp is required
 func NewPoint(name string, tags map[string]string, fields map[string]interface{}, t time.Time) (*infc.Point, error) {
-	return infc.NewPoint(name, tags, fields, t)
+	// Add nanosecond-level random offset to prevent exact timestamp collisions
+	uniqueTime := t.Add(time.Duration(rand.Int63n(1000000)) * time.Nanosecond)
+	return infc.NewPoint(name, tags, fields, uniqueTime)
 }
-
 // SendPoint sends point to the channel listened by metrics consumer
 func SendPoint(p *infc.Point) {
 	pc <- p
@@ -122,7 +124,7 @@ SendLoop:
 		return
 	}
 
-	l.Debugf("Successfully written %d points to DB\n", len(points))
+	l.Infof("Successfully written %d points to DB\n", len(points))
 }
 
 // SendUserLineData takes a line with user data and adds it to the processing list
@@ -393,7 +395,7 @@ func InitInfluxConnection(cmd *cobra.Command) error {
 		return err
 	}
 	//sleep for 15 seconds to allow influxdb to	start
-	time.Sleep(15 * time.Second)
+	//time.Sleep(15 * time.Second)
 
 	_, _, err = c.Ping(time.Second * 10)
 	if err != nil {

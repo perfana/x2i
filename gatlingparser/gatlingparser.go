@@ -27,6 +27,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -43,6 +44,7 @@ import (
 	"github.com/perfana/x2i/influx"
 	l "github.com/perfana/x2i/logger"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -79,13 +81,15 @@ var (
 	runLine     = regexp.MustCompile(`^RUN\s`)
 	errorLine   = regexp.MustCompile(`^ERROR\s`)
 
-	parserStopped        = make(chan struct{})
+	parserStopped = make(chan struct{})
 )
 
 func lookupTargetDir(ctx context.Context, dir string) error {
 	const loopTimeout = 5 * time.Second
 
-	l.Infoln("Looking for target directory...")
+	cleanDir := filepath.Clean(filepath.FromSlash(dir))
+
+	l.Infof("Looking for target directory... %s", cleanDir)
 	for {
 		// This block checks if stop signal is received from user
 		// and stops further lookup
@@ -95,20 +99,25 @@ func lookupTargetDir(ctx context.Context, dir string) error {
 		default:
 		}
 
-		fInfo, err := os.Stat(dir)
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("Target path %s exists but there is an error: %w", dir, err)
-		}
-		if os.IsNotExist(err) {
-			time.Sleep(loopTimeout)
-			continue
+		fInfo, err := os.Stat(cleanDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				time.Sleep(loopTimeout)
+				continue
+			}
+			// Log the specific error type to help diagnose issues
+			return fmt.Errorf("error accessing path %s (error type: %T): %w", dir, err, err)
 		}
 
 		if !fInfo.IsDir() {
-			return fmt.Errorf("Was expecting directory at %s, but found a file", dir)
+			return fmt.Errorf("was expecting directory at %s, but found a file", dir)
 		}
 
-		abs, _ := filepath.Abs(dir)
+		abs, err := filepath.Abs(cleanDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for %s: %w", dir, err)
+		}
+
 		l.Infof("Target directory found at %s", abs)
 		break
 	}
@@ -117,6 +126,12 @@ func lookupTargetDir(ctx context.Context, dir string) error {
 }
 
 func walkFunc(path string, info os.FileInfo, err error) error {
+	// First check if there was an error accessing the file/directory
+	if err != nil {
+		// Either log the error and continue, or return it to stop walking
+		l.Errorf("Error accessing path %s: %v", path, err)
+		return nil // or return err if you want to stop walking
+	}
 
 	if info.IsDir() && resultDirNamePattern.MatchString(info.Name()) {
 		l.Debugf("Found directory '%s' with mod time %s (start time: %s)", path, info.ModTime().String(), time.Unix(startTime, 0).String())
@@ -142,7 +157,7 @@ func walkFunc(path string, info os.FileInfo, err error) error {
 func lookupResultsDir(ctx context.Context, dir string) error {
 	const loopTimeout = 5 * time.Second
 
-	l.Infof("Searching for results directory...")
+	l.Infof("Searching for results directory in %s...", dir)
 	for {
 		// This block checks if stop signal is received from user
 		// and stops further lookup
@@ -153,11 +168,11 @@ func lookupResultsDir(ctx context.Context, dir string) error {
 		}
 
 		err := filepath.Walk(dir, walkFunc)
-		if err == errFound {
+		if errors.Is(err, errFound) {
 			break
 		}
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to walk directory %s: %w", dir, err)
 		}
 
 		time.Sleep(loopTimeout)
@@ -179,23 +194,45 @@ func waitForLog(ctx context.Context) error {
 		default:
 		}
 
-		fInfo, err := os.Stat(logDir + "/" + simulationLogFileName)
-		if err != nil && !os.IsNotExist(err) {
-			return err
+		logFile := filepath.Join(logDir, simulationLogFileName)
+		fInfo, err := os.Stat(logFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				time.Sleep(loopTimeout)
+				continue
+			}
+			return fmt.Errorf("failed to stat simulation log file %s: %w", logFile, err)
 		}
-		if os.IsNotExist(err) {
+
+		// wait till at least first line is present to prevent EOF error
+		if fInfo.Size() < 300 {
 			time.Sleep(loopTimeout)
 			continue
 		}
 
-		// WARNING: second part of this check may fail on Windows. Not tested
-		if fInfo.Mode().IsRegular() && (runtime.GOOS == "windows" || fInfo.Mode().Perm() == 420) {
-			abs, _ := filepath.Abs(logDir + "/" + simulationLogFileName)
-			l.Infof("Found %s\n", abs)
+		abs, err := filepath.Abs(logFile)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for %s: %w", logFile, err)
+		}
+
+		if !fInfo.Mode().IsRegular() {
+			time.Sleep(loopTimeout)
+			continue
+		}
+
+		// Check file permissions
+		isReadable := true
+		if runtime.GOOS != "windows" {
+			// On Unix-like systems, check for read permission (0644 = 420 in decimal)
+			isReadable = fInfo.Mode().Perm()&0644 == 0644
+		}
+
+		if isReadable {
+			l.Infof("Found log file at %s", abs)
 			break
 		}
 
-		return errors.New("Something wrong happened when attempting to open " + simulationLogFileName)
+		return errors.New("something wrong happened when attempting to open " + simulationLogFileName)
 	}
 
 	return nil
@@ -419,7 +456,61 @@ func stringProcessor(lineBuffer []byte) error {
 		}
 		return err
 	default:
-		return fmt.Errorf("Unknown line type encountered")
+		// If the line buffer contains unknown characters, convert bytes to hex string for better debugging
+		// hexLineBuffer := fmt.Sprintf("%X", lineBuffer)
+		//return fmt.Errorf("Unknown line type encountered: %s (hex: %s)", lineBuffer, hexLineBuffer)
+		// If string is longer than 24 chars, truncate it
+		if len(lineBuffer) > 24 {
+			lineBuffer = lineBuffer[:24]
+		}
+		return fmt.Errorf("Unknown line type encountered: %s", lineBuffer)
+	}
+}
+
+func detectGatlingLogVersion(file *os.File) (string, error) {
+	defer func() {
+		if _, err := file.Seek(0, 0); err != nil {
+			// Log the error or handle it appropriately
+			l.Errorf("Failed to seek to beginning of file: %v", err)
+		}
+	}()
+	var firstByte byte
+	if err := binary.Read(file, currentByteOrder(), &firstByte); err != nil {
+		if err == io.EOF {
+			return "", fmt.Errorf("file is empty")
+		}
+		if err == io.ErrUnexpectedEOF {
+			return "", fmt.Errorf("file is truncated")
+		}
+		return "", fmt.Errorf("failed to read first byte: %w", err)
+	}
+	if firstByte == 0 {
+		msg, err := ReadRunMessage(bufio.NewReader(file))
+		if err == io.EOF {
+			return "", fmt.Errorf("The file %s is empty or contains no readable header data: %w", simulationLogFileName, err)
+		}
+		if err != nil {
+			return "", err
+		}
+		return msg.GatlingVersion, nil
+	} else {
+		if offset, err := file.Seek(0, 0); err != nil {
+			return "", fmt.Errorf("failed to seek to beginning of file (offset %d): %w", offset, err)
+		}
+		reader := bufio.NewReader(file)
+		var line []byte
+		var err error
+		// skip assertion records if they present
+		for line, err = reader.ReadBytes('\n'); runLine.Match(line); {
+			if err != nil {
+				return "", err
+			}
+		}
+		split := bytes.Split(line, tabSep)
+		if len(split) != runLineLen {
+			return "", errors.New("RUN line contains unexpected amount of values")
+		}
+		return string(split[5]), nil
 	}
 }
 
@@ -472,6 +563,180 @@ ParseLoop:
 	parserStopped <- struct{}{}
 }
 
+func processLogHeader(reader *bufio.Reader) (*RunMessage, []string, error) {
+	var recordType byte
+	err := binary.Read(reader, currentByteOrder(), &recordType)
+	if err != nil {
+		return nil, nil, err
+	}
+	if recordType != 0 {
+		return nil, nil, fmt.Errorf("incorrect gatling log format: header record not found")
+	}
+
+	runMessage, scenarios, _, err := ReadHeader(reader)
+	if err != nil {
+		return &runMessage, scenarios, err
+	}
+
+	l.Infof("Starting collecting for Gatling %s with simulation %s, that started at %s\n",
+		runMessage.GatlingVersion,
+		runMessage.SimulationClassName,
+		time.UnixMilli(runMessage.Start),
+	)
+	l.Infof("Scenarios %s\n", scenarios)
+	return &runMessage, scenarios, nil
+}
+
+func processRemainingRecords(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	reader *bufio.Reader,
+	file *os.File,
+	runMessage RunMessage,
+	scenarios []string,
+	records chan<- interface{},
+) {
+	defer close(records)
+	defer wg.Done()
+
+	latestReadTime := time.Now()
+	lastSize := int64(0)
+
+	for {
+		select {
+		case <-ctx.Done():
+			l.Infoln("Parser received closing signal. Processing stopped")
+			return
+		default:
+			// Check file size
+			if stat, _ := file.Stat(); stat.Size() == lastSize {
+				if time.Now().After(latestReadTime.Add(time.Duration(waitTime) * time.Second)) {
+					l.Infof("File size unchanged for %d seconds. Stopping application...", waitTime)
+					return
+				}
+			} else {
+				lastSize = stat.Size()
+				latestReadTime = time.Now()
+			}
+
+			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
+			if err != nil {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			records <- record
+		}
+	}
+}
+type RecordsWriter interface {
+	writeAll(wg *sync.WaitGroup, records <-chan interface{})
+}
+
+type InfluxRecordsWriter struct{}
+
+func (w *InfluxRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interface{}) {
+	defer wg.Done()
+	for record := range records {
+		switch r := record.(type) {
+		case RunMessage:
+			simulationName = r.SimulationClassName[strings.LastIndex(r.SimulationClassName, ".")+1:]
+			testStartTime := time.Unix(0, r.Start*oneMillisecond+rand.Int63n(oneMillisecond))
+			influx.InitTestInfo(systemUnderTest, testEnvironment, simulationName, r.RunDescription, nodeName, testStartTime)
+			point, err := r.ToInfluxPoint(testStartTime)
+			if err != nil {
+				l.Errorf("Error creating new point with test start data: %v", err)
+			}
+			influx.SendPoint(point)
+
+		case RequestRecord:
+			point, err := r.ToInfluxPoint()
+			if err != nil {
+				l.Errorf("Error creating new point with request data: %v", err)
+			}
+			influx.SendPoint(point)
+
+		case GroupRecord:
+			point, err := r.ToInfluxPoint()
+			if err != nil {
+				l.Errorf("Error creating new point with group data: %v", err)
+			}
+			influx.SendPoint(point)
+
+		case UserRecord:
+			timestamp, scenario, status := r.ToInfluxUserLineParams()
+			influx.SendUserLineData(timestamp, scenario, status)
+
+		case ErrorRecord:
+			point, err := r.ToInfluxPoint()
+			if err != nil {
+				l.Errorf("Error creating new point with error data: %v", err)
+			}
+			influx.SendPoint(point)
+
+		default:
+			l.Errorf("Unknown record type: %T", r)
+		}
+	}
+}
+
+type SumRecordsWriter struct{}
+
+func (w *SumRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interface{}) {
+	defer wg.Done()
+	var (
+		users       = 0
+		reqs        = 0
+		rumMessages = 0
+		errors      = 0
+		groups      = 0
+	)
+
+	for record := range records {
+		// l.Infoln(record)
+		switch r := record.(type) {
+		case RunMessage:
+			rumMessages += 1
+
+		case RequestRecord:
+			reqs += 1
+
+		case GroupRecord:
+			groups += 1
+
+		case UserRecord:
+			users += 1
+
+		case ErrorRecord:
+			errors += 1
+
+		default:
+			l.Errorf("Unknown record type: %T", r)
+		}
+
+	}
+	l.Debugf("msg = %d, users = %d, reqs = %d, groups = %d, errors = %d\n", rumMessages, users, reqs, groups, errors)
+}
+
+func fileProcessorBinary(ctx context.Context, file *os.File, recordsWriter RecordsWriter) {
+	defer func() { parserStopped <- struct{}{} }()
+	reader := bufio.NewReader(file)
+
+	runMessage, scenarios, err := processLogHeader(reader)
+	if err != nil {
+		l.Errorf("Log file %s reading error: %v", file.Name(), err)
+		return
+	}
+
+	wg := &sync.WaitGroup{}
+	records := make(chan interface{}, 100)
+	records <- *runMessage
+
+	wg.Add(2)
+	go processRemainingRecords(ctx, wg, reader, file, *runMessage, scenarios, records)
+	go recordsWriter.writeAll(wg, records)
+	wg.Wait()
+}
+
 func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -480,9 +745,25 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	if err != nil {
 		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			l.Errorf("Failed to close file: %v", err)
+		}
+	}()
 
-	fileProcessor(ctx, file)
+	ver, err := detectGatlingLogVersion(file)
+	if err != nil {
+		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
+	}
+	if !semver.IsValid(ver) {
+		ver = "v" + ver
+	}
+	if semver.Compare(ver, "v3.12.1") >= 0 {
+		writer := InfluxRecordsWriter{}
+		fileProcessorBinary(ctx, file, &writer)
+	} else {
+		fileProcessor(ctx, file)
+	}
 }
 
 // RunMain performs main application logic

@@ -30,13 +30,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
-	"github.com/perfana/x2i/influx"
-	l "github.com/perfana/x2i/logger"
 	"github.com/perfana/x2i/gatlingparser"
+	"github.com/perfana/x2i/influx"
 	"github.com/perfana/x2i/jmeterparser"
 	"github.com/perfana/x2i/k6parser"
+	l "github.com/perfana/x2i/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -89,20 +90,20 @@ func preRunSetup(cmd *cobra.Command, args []string) error {
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use: "x2i [path/to/results/dir]",
+	Use:     "x2i [path/to/results/dir]",
 	Example: "x2i [path]/target/gatling -i gatling -d -b gatling\nx2i [path]/target/jmeter/results -i jmeter -d -b jmeter\nx2i [path] -i k6 -d -b k6",
-	Short: "\nWrite Gatling, JMeter or K6 logs directly to InfluxDB.\n\nMore info at https://github.com/perfana/x2i",
-	Version: "v1.0.0",
+	Short:   "\nWrite Gatling, JMeter or K6 logs directly to InfluxDB.\n\nMore info at https://github.com/perfana/x2i",
+	Version: "v1.1.0-beta-gatling-binary-log",
 	PreRunE: preRunSetup,
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-	    i, _ := cmd.Flags().GetString("testtool")
-	    if i == "jmeter" {
-	      jmeterparser.RunMain(cmd, args[0])
-	    } else if i == "k6" {
-	      k6parser.RunMain(cmd, args[0])
-	    } else {
-		  gatlingparser.RunMain(cmd, args[0])
+		i, _ := cmd.Flags().GetString("testtool")
+		if i == "jmeter" {
+			jmeterparser.RunMain(cmd, args[0])
+		} else if i == "k6" {
+			k6parser.RunMain(cmd, args[0])
+		} else {
+			gatlingparser.RunMain(cmd, args[0])
 		}
 	},
 }
@@ -111,6 +112,15 @@ var rootCmd = &cobra.Command{
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	// Initiating logger before any other processes start
+	level, _ := rootCmd.Flags().GetString("log-level")
+	switch strings.ToUpper(level) {
+	case "DEBUG":
+		l.SetLogLevel(l.DEBUG)
+	case "INFO":
+		l.SetLogLevel(l.INFO)
+	default:
+		l.SetLogLevel(l.ERROR)
+	}
 	logPath, _ := rootCmd.Flags().GetString("log")
 	err := l.InitLogger(logPath)
 	if err != nil {
@@ -132,7 +142,8 @@ func init() {
 	rootCmd.Flags().StringP("password", "p", "", "Password credential for InfluxDB instance")
 	rootCmd.Flags().StringP("database", "b", "", "Database name in InfluxDB")
 	rootCmd.Flags().StringP("testtool", "i", "gatling", "Testtool used, can be gatling, jmeter or k6")
-	rootCmd.Flags().StringP("log", "l", "x2i.log", "File path to x2i log file")
+	rootCmd.PersistentFlags().StringP("log-level", "l", "INFO", "Set log level (DEBUG, INFO, ERROR)")
+	rootCmd.Flags().StringP("log", "o", "x2i.log", "Log file path")
 	rootCmd.Flags().StringP("test-environment", "t", "", "Test environment identifier")
 	rootCmd.Flags().StringP("system-under-test", "y", "", "System under test identifier")
 	rootCmd.Flags().UintP("stop-timeout", "s", 120, "Time (seconds) to exit if no new log lines found")
@@ -141,3 +152,5 @@ func init() {
 	// set up global context
 	ctx, cancel = context.WithCancel(context.Background())
 }
+
+
