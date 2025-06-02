@@ -8,8 +8,6 @@ import (
 	"io"
 	"math"
 	"strings"
-
-	l "github.com/perfana/x2i/logger" // Keep l for other logs if any, though prompt implies converting all specified ones
 )
 
 const (
