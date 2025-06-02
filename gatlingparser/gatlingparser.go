@@ -591,41 +591,67 @@ func processRemainingRecords(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	reader *bufio.Reader,
-	file *os.File,
 	runMessage RunMessage,
 	scenarios []string,
 	records chan<- interface{},
+	stopTimeout uint,
 ) {
 	defer close(records)
 	defer wg.Done()
 
 	latestReadTime := time.Now()
-	lastSize := int64(0)
+	var consecutiveEOFCount int = 0
+	var recordCounter int = 0 // For logging purposes
 
 	for {
 		select {
 		case <-ctx.Done():
-			l.Infoln("Parser received closing signal. Processing stopped")
+			l.Infof("PPR: CTX DONE at loop start. Records processed in this session: %d", recordCounter)
 			return
 		default:
-			// Check file size
-			if stat, _ := file.Stat(); stat.Size() == lastSize {
-				if time.Now().After(latestReadTime.Add(time.Duration(waitTime) * time.Second)) {
-					l.Infof("File size unchanged for %d seconds. Stopping application...", waitTime)
-					return
-				}
-			} else {
-				lastSize = stat.Size()
+		}
+
+		l.Debugf("PPR: Loop top. ConsecutiveEOF: %d, LastReadTime: %s", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano))
+
+		record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios) // This calls the logged RNHR in decoders.go
+
+		if err == nil {
+			recordCounter++
+			l.Debugf("PPR: Successfully read record #%d. Type: %T", recordCounter, record) // Log type of record
+			consecutiveEOFCount = 0
+			select {
+			case records <- record:
+				oldLRT := latestReadTime
 				latestReadTime = time.Now()
+				l.Debugf("PPR: Successfully sent record #%d. Updated latestReadTime from %s to %s", recordCounter, oldLRT.Format(time.RFC3339Nano), latestReadTime.Format(time.RFC3339Nano))
+			case <-ctx.Done():
+				l.Infof("PPR: CTX DONE while sending record #%d. Total in session: %d", recordCounter, recordCounter)
+				return
+			}
+			continue
+		}
+
+		l.Debugf("PPR: ReadNotHeaderRecord returned error: %v", err) // Log the actual error
+		if err == io.EOF {
+			consecutiveEOFCount++
+			l.Debugf("PPR: EOF #%d. Current latestReadTime: %s, stopTimeout: %d", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano), stopTimeout) // stopTimeout is a uint
+			if time.Now().After(latestReadTime.Add(time.Duration(stopTimeout) * time.Second)) {
+				l.Infof("PPR: TIMEOUT after EOF. LastReadTime: %s. Records processed in this session: %d. Exiting.", latestReadTime.Format(time.RFC3339Nano), recordCounter)
+				return
 			}
 
-			record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
-			if err != nil {
-				time.Sleep(100 * time.Millisecond)
-				continue
+			sleepDuration := 100 * time.Millisecond
+			if consecutiveEOFCount >= 5 {
+				sleepDuration = 500 * time.Millisecond
 			}
-			records <- record
+			l.Debugf("PPR: Sleeping for %s due to EOF #%d", sleepDuration, consecutiveEOFCount)
+			time.Sleep(sleepDuration)
+			continue
 		}
+
+		l.Errorf("PPR: Non-EOF Reading error: %v. Pausing.", err) // Log non-EOF errors clearly
+		time.Sleep(50 * time.Millisecond)
+		continue
 	}
 }
 type RecordsWriter interface {
@@ -732,7 +758,7 @@ func fileProcessorBinary(ctx context.Context, file *os.File, recordsWriter Recor
 	records <- *runMessage
 
 	wg.Add(2)
-	go processRemainingRecords(ctx, wg, reader, file, *runMessage, scenarios, records)
+	go processRemainingRecords(ctx, wg, reader, *runMessage, scenarios, records, waitTime)
 	go recordsWriter.writeAll(wg, records)
 	wg.Wait()
 }

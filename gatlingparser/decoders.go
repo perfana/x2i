@@ -3,7 +3,7 @@ package gatlingparser
 import (
 	"bufio"
 	"encoding/binary"
-	"encoding/hex"
+	"encoding/hex" // Ensured import
 	"fmt"
 	"io"
 	"math"
@@ -21,21 +21,21 @@ const (
 )
 
 func ReadInt(reader *bufio.Reader) (int32, error) {
-	var int32Value int32
-	err := binary.Read(reader, currentByteOrder(), &int32Value)
-	return int32Value, err
+	var i int32
+	const int32ByteSize = 4
+	l.Debugf("ReadInt: Attempting to read %d bytes for int32.", int32ByteSize)
+
+	err := binary.Read(reader, currentByteOrder(), &i)
+	if err != nil {
+		l.Debugf("ReadInt: binary.Read error: %v. Value of i before error (if any part read): %d", err, i)
+		return 0, err
+	}
+	l.Debugf("ReadInt: Successfully read value: %d", i)
+	return i, nil
 }
 
 func currentByteOrder() binary.ByteOrder {
 	var order binary.ByteOrder = binary.BigEndian
-	//if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-	//	order = binary.LittleEndian
-	//}
-	//l.Debugf("Using byte order: %v for OS: %s, ARCH: %s",
-	//	order == binary.LittleEndian,
-	//	runtime.GOOS,
-	//	runtime.GOARCH,
-	//)
 	return order
 }
 
@@ -237,13 +237,17 @@ func ReadGroup(reader *bufio.Reader) (*Group, error) {
 }
 
 func ReadRequestRecord(reader *bufio.Reader, runStartTimestamp int64) (RequestRecord, error) {
+	l.Debugf("ReadRequestRecord: Called.")
+	// RecordType byte already consumed by ReadNotHeaderRecord
 	var record RequestRecord
 
 	group, err := ReadGroup(reader)
 	if err != nil {
+		l.Debugf("ReadRequestRecord: ReadGroup error: %v", err)
 		return record, err
 	}
 	record.Group = group
+	l.Debugf("ReadRequestRecord: Successfully decoded groupHierarchy with %d groups. Continuing to decode other fields.", len(group.Hierarchy))
 
 	record.Name, err = ReadCachedSanitizedString(reader)
 	if err != nil {
@@ -370,30 +374,50 @@ func ReadErrorRecord(reader *bufio.Reader, runStartTimestamp int64) (ErrorRecord
 }
 
 func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenarios []string) (interface{}, error) {
-	headBytes, err := reader.Peek(8)
-	if err == io.EOF {
-		return nil, err
-	}
-	if err != nil {
-		return nil, fmt.Errorf("could not read bytes from log file - %v", err)
-	}
-	var recordType byte
-	recordType, err = reader.ReadByte()
-	if err != nil {
-		return nil, err
+	l.Debugf("RNHR: Called.")
+	headBytes, errPeek := reader.Peek(8)
+	if errPeek != nil && errPeek != io.EOF {
+		 l.Debugf("RNHR: reader.Peek(8) returned error: %v", errPeek)
+	} else if errPeek == nil {
+		 l.Debugf("RNHR: Peeked 8 bytes: %s", hex.EncodeToString(headBytes)) // Explicit hex usage
 	}
 
-	switch recordType {
+	recordTypeByte, err := reader.ReadByte()
+	if err != nil {
+		l.Debugf("RNHR: reader.ReadByte() for recordType returned error: %v", err)
+		return nil, err
+	}
+	l.Debugf("RNHR: Read recordType byte: %d", recordTypeByte)
+
+	switch recordTypeByte {
 	case RequestRecordType:
+		l.Debugf("RNHR: Decoding RequestRecord.")
 		return ReadRequestRecord(reader, runStartTimestapm)
 	case GroupRecordType:
+		l.Debugf("RNHR: Decoding GroupRecord.")
 		return ReadGroupRecord(reader, runStartTimestapm)
 	case UserRecordType:
+		l.Debugf("RNHR: Decoding UserRecord.")
 		return ReadUserRecord(reader, runStartTimestapm, scenarios)
 	case ErrorRecordType:
+		l.Debugf("RNHR: Decoding ErrorRecord.")
 		return ReadErrorRecord(reader, runStartTimestapm)
 	default:
-		l.Errorf("Unknown record start fragment: %s\n", hex.EncodeToString(headBytes))
-		return nil, fmt.Errorf("unknown record type: %d", recordType)
+		var contextBytesForError []byte
+		var hexContext string = "N/A"
+		if errPeek == nil && headBytes != nil {
+			contextBytesForError = headBytes
+		} else {
+			peekAgainBytes, peekErr := reader.Peek(16)
+			if peekErr == nil {
+				contextBytesForError = peekAgainBytes
+			}
+		}
+		if len(contextBytesForError) > 0 {
+            hexContext = hex.EncodeToString(contextBytesForError) // Explicit hex usage
+        }
+		errUnknown := fmt.Errorf("unknown record type: %d", recordTypeByte)
+		l.Errorf("RNHR: %v. Context bytes (if available): %s", errUnknown, hexContext) // Use %s for string
+		return nil, errUnknown
 	}
 }
