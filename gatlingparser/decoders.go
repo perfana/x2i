@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt" // Ensure fmt is imported
+	"errors" // Added errors import
+	"fmt"    // Ensure fmt is imported
 	"io"
 	"math"
 	"strings"
-
 	// l "github.com/perfana/x2i/logger" // Logger import is removed
 )
+
+var ErrPartialRecord = errors.New("record data incomplete, more bytes needed")
 
 const (
 	RunHeaderType byte = iota
@@ -21,13 +23,17 @@ const (
 )
 
 func ReadInt(reader *bufio.Reader) (int32, error) {
-	var i int32
-	const int32ByteSize = 4
 	fmt.Printf("READINT_ATTEMPT_READ_4_BYTES\n")
-
+	var i int32
 	err := binary.Read(reader, currentByteOrder(), &i)
 	if err != nil {
-		fmt.Printf("READINT_BINARY_READ_ERR: %v. Value: %d\n", err, i)
+		// If EOF or UnexpectedEOF occurs, it means the field was truncated.
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			fmt.Printf("READINT_BINARY_READ_ERR: %v (returning ErrPartialRecord). Value after partial/failed read: %d\n", err, i)
+			return 0, ErrPartialRecord // Return custom error
+		}
+		// For other errors, propagate them as is.
+		fmt.Printf("READINT_BINARY_READ_ERR: %v. Value after partial/failed read: %d\n", err, i)
 		return 0, err
 	}
 	fmt.Printf("READINT_SUCCESS: Value: %d\n", i)
@@ -42,6 +48,10 @@ func currentByteOrder() binary.ByteOrder {
 func ReadLong(reader *bufio.Reader) (int64, error) {
 	var int64Value int64
 	err := binary.Read(reader, currentByteOrder(), &int64Value)
+	// Refactor to return ErrPartialRecord if needed by other functions
+	if err != nil && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
+		return 0, ErrPartialRecord
+	}
 	return int64Value, err
 }
 
@@ -50,11 +60,15 @@ func sanitize(s string) string {
 }
 
 func ReadString(reader *bufio.Reader) (string, error) {
-	fmt.Printf("READSTRING_CALLED\n") // As per ReadCString -> ReadString
-	strLength, err := ReadInt(reader)
+	fmt.Printf("READSTRING_CALLED\n")
+	strLength, err := ReadInt(reader) // Uses refactored ReadInt
 	if err != nil {
-		fmt.Printf("READSTRING_ERR: reading length: %v\n", err)
-		return "", err
+		// If ReadInt returns ErrPartialRecord, propagate it.
+		// Otherwise, it's a different error from ReadInt (already logged there) or a non-partial error before it.
+		if !errors.Is(err, ErrPartialRecord) { // Avoid double logging for partial record from ReadInt
+			fmt.Printf("READSTRING_ERR: reading length: %v\n", err)
+		}
+		return "", err // Propagate ErrPartialRecord or other errors
 	}
 
 	if strLength == 0 {
@@ -74,26 +88,35 @@ func ReadString(reader *bufio.Reader) (string, error) {
 	}
 
 	strBytes := make([]byte, strLength)
-	_, err = reader.Read(strBytes)
+	// Use io.ReadFull to ensure all bytes are read or return ErrUnexpectedEOF (which we'll map)
+	n, err := io.ReadFull(reader, strBytes)
 	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			fmt.Printf("READSTRING_ERR: reading bytes, expected %d, got %d: %v (returning ErrPartialRecord)\n", strLength, n, err)
+			return "", ErrPartialRecord
+		}
 		fmt.Printf("READSTRING_ERR: reading bytes: %v\n", err)
 		return "", err
 	}
 
-	_, err = reader.ReadByte() // skip byte of internal Java string serialization format ('coder' field in String class)
+	// skip byte of internal Java string serialization format ('coder' field in String class)
+	_, err = reader.ReadByte()
 	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			fmt.Printf("READSTRING_ERR: skipping coder byte: %v (returning ErrPartialRecord)\n", err)
+			return "", ErrPartialRecord
+		}
 		fmt.Printf("READSTRING_ERR: skipping coder byte: %v\n", err)
 		return "", err
 	}
 	readString := string(strBytes)
-	// fmt.Printf("DEBUG: Read string as %q\n", readString) // This is an existing debug line, keep as is or remove if too noisy. For now, keeping.
 	return readString, nil
 }
 
 func ReadSanitizedString(reader *bufio.Reader) (string, error) {
 	str, err := ReadString(reader)
 	if err != nil {
-		return "", err
+		return "", err // Propagate ErrPartialRecord or other errors
 	}
 	return sanitize(str), nil
 }
@@ -101,17 +124,21 @@ func ReadSanitizedString(reader *bufio.Reader) (string, error) {
 var stringCache = make(map[int32]string)
 
 func ReadCachedSanitizedString(reader *bufio.Reader) (string, error) {
-	fmt.Printf("READCACHEDSANITIZEDSTRING_CALLED\n") // As per ReadCachedStringAsReference -> ReadCachedSanitizedString
-	cachedIndex, err := ReadInt(reader)
+	fmt.Printf("READCACHEDSANITIZEDSTRING_CALLED\n")
+	cachedIndex, err := ReadInt(reader) // Uses refactored ReadInt
 	if err != nil {
-		fmt.Printf("READCACHEDSANITIZEDSTRING_ERR: reading index: %v\n", err)
+		if !errors.Is(err, ErrPartialRecord) {
+			fmt.Printf("READCACHEDSANITIZEDSTRING_ERR: reading index: %v\n", err)
+		}
 		return "", err
 	}
 
 	if cachedIndex >= 0 {
-		str, err := ReadString(reader)
+		str, err := ReadString(reader) // Uses refactored ReadString
 		if err != nil {
-			fmt.Printf("READCACHEDSANITIZEDSTRING_ERR: reading string for cache: %v\n", err)
+			if !errors.Is(err, ErrPartialRecord) { // Avoid double logging from ReadString if it already logged
+				fmt.Printf("READCACHEDSANITIZEDSTRING_ERR: reading string for cache: %v\n", err)
+			}
 			return "", err
 		}
 		sanitizedStr := sanitize(str)
@@ -131,15 +158,18 @@ func ReadCachedSanitizedString(reader *bufio.Reader) (string, error) {
 func ReadBool(reader *bufio.Reader) (bool, error) {
 	boolByte, err := reader.ReadByte()
 	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return false, ErrPartialRecord
+		}
 		return false, err
 	}
 	return boolByte != 0, nil
 }
 
 func ReadByteArray(reader *bufio.Reader) ([]byte, error) {
-	bytesLength, err := ReadInt(reader)
+	bytesLength, err := ReadInt(reader) // Uses refactored ReadInt
 	if err != nil {
-		return nil, err
+		return nil, err // Propagate ErrPartialRecord or other errors
 	}
 
 	if bytesLength == 0 {
@@ -149,55 +179,74 @@ func ReadByteArray(reader *bufio.Reader) ([]byte, error) {
 	if bytesLength < 0 {
 		return nil, fmt.Errorf("invalid bytes length: %d", bytesLength)
 	}
-
-	bytes := make([]byte, bytesLength)
-	_, err = reader.Read(bytes)
-	if err != nil {
-		return nil, err
+	if bytesLength > 2000000 { // Safety break for very large byte arrays
+		return nil, fmt.Errorf("byte array length too large: %d", bytesLength)
 	}
 
+	bytes := make([]byte, bytesLength)
+	n, err := io.ReadFull(reader, bytes)
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			fmt.Printf("READBYTEARRAY_ERR: reading bytes, expected %d, got %d: %v (returning ErrPartialRecord)\n", bytesLength, n, err)
+			return nil, ErrPartialRecord
+		}
+		return nil, err
+	}
 	return bytes, nil
 }
 
-func ReadRunMessage(reader *bufio.Reader) (RunMessage, error) {
-	fmt.Printf("READRUNMESSAGE_CALLED\n")
+// Decode<Type>Record functions
+// Each must now first read and verify its type byte, then decode fields.
+// If any helper returns ErrPartialRecord, it should be propagated.
+
+func DecodeRunMessage(reader *bufio.Reader) (RunMessage, error) {
+	fmt.Printf("DECODERUNMESSAGE_CALLED\n")
+	// Type byte already consumed by ReadHeader or initial version of RNHR for RunMessage
+	// For this refactor, assuming ReadHeader handles its own type byte if needed.
+	// This function is called by ReadHeader, not ReadNotHeaderRecord.
+	// Thus, its internal logic for reading fields should map to ErrPartialRecord.
+
 	var result RunMessage
 	var err error
 
 	result.GatlingVersion, err = ReadString(reader)
 	if err != nil {
-		fmt.Printf("READRUNMESSAGE_ERR: GatlingVersion: %v\n", err)
 		return result, err
-	}
+	} // Propagates ErrPartialRecord from ReadString
 
 	result.SimulationClassName, err = ReadString(reader)
 	if err != nil {
-		fmt.Printf("READRUNMESSAGE_ERR: SimulationClassName: %v\n", err)
 		return result, err
 	}
 
-	result.Start, err = ReadLong(reader)
+	result.Start, err = ReadLong(reader) // ReadLong also updated to return ErrPartialRecord
 	if err != nil {
-		fmt.Printf("READRUNMESSAGE_ERR: Start: %v\n", err)
 		return result, err
 	}
 
 	result.RunDescription, err = ReadString(reader)
 	if err != nil {
-		fmt.Printf("READRUNMESSAGE_ERR: RunDescription: %v\n", err)
 		return result, err
 	}
-	result.SimulationId = ""
 
+	result.SimulationId = ""
 	return result, nil
 }
 
+// ReadHeader is not a Decode<Type>Record, it's a higher level construct.
+// Its internal calls to ReadRunMessage and ReadInt/ReadString for scenarios/assertions
+// will now correctly propagate ErrPartialRecord if they encounter partial data.
 func ReadHeader(reader *bufio.Reader) (RunMessage, []string, [][]byte, error) {
 	var message RunMessage
 
-	message, err := ReadRunMessage(reader)
+	// Assuming the very first byte (RunHeaderType) was already peeked/read by caller like processLogHeader
+	// For this specific refactor, we'll let DecodeRunMessage be the one that would be called
+	// if ReadNotHeaderRecord was generic enough to handle RunMessage too.
+	// However, processLogHeader calls ReadHeader, which calls ReadRunMessage directly.
+	// So, DecodeRunMessage is the refactored ReadRunMessage.
+	message, err := DecodeRunMessage(reader) // Changed to DecodeRunMessage
 	if err != nil {
-		return message, nil, nil, err
+		return message, nil, nil, err // Propagates ErrPartialRecord
 	}
 
 	scenariosNumber, err := ReadInt(reader)
@@ -206,7 +255,6 @@ func ReadHeader(reader *bufio.Reader) (RunMessage, []string, [][]byte, error) {
 	}
 
 	scenarios := make([]string, scenariosNumber)
-
 	for i := 0; i < int(scenariosNumber); i++ {
 		scenarios[i], err = ReadSanitizedString(reader)
 		if err != nil {
@@ -220,31 +268,27 @@ func ReadHeader(reader *bufio.Reader) (RunMessage, []string, [][]byte, error) {
 	}
 
 	assertions := make([][]byte, assertionsNumber)
-
 	for i := 0; i < int(assertionsNumber); i++ {
 		assertions[i], err = ReadByteArray(reader)
 		if err != nil {
 			return message, nil, nil, err
 		}
 	}
-
 	return message, scenarios, assertions, nil
-
 }
 
-func ReadGroup(reader *bufio.Reader) (*Group, error) {
-	fmt.Printf("READGROUP_CALLED\n") // As per ReadGroupHierarchy -> ReadGroup
-	const maxHierarchyLength = 2000 
+func DecodeGroup(reader *bufio.Reader) (*Group, error) { // Renamed from ReadGroup
+	fmt.Printf("DECODEGROUP_CALLED\n")
+	const maxHierarchyLength = 2000
 
 	hierarchyLength, err := ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READGROUP_ERR: reading length: %v\n", err)
-		return nil, fmt.Errorf("failed to read hierarchy length: %w", err)
-	}
+		return nil, err
+	} // Propagates ErrPartialRecord
 
 	if hierarchyLength < 0 || hierarchyLength > maxHierarchyLength {
 		err = fmt.Errorf("invalid hierarchy length: %d (must be between 0 and %d)", hierarchyLength, maxHierarchyLength)
-		fmt.Printf("READGROUP_ERR: %v\n", err)
+		fmt.Printf("DECODEGROUP_ERR: %v\n", err)
 		return nil, err
 	}
 
@@ -252,60 +296,58 @@ func ReadGroup(reader *bufio.Reader) (*Group, error) {
 	for i := int32(0); i < hierarchyLength; i++ {
 		hierarchy[i], err = ReadCachedSanitizedString(reader)
 		if err != nil {
-			fmt.Printf("READGROUP_ERR: reading element %d: %v\n", i, err)
-			return nil, fmt.Errorf("failed to read hierarchy element %d: %w", i, err)
-		}
+			return nil, err
+		} // Propagates ErrPartialRecord
 	}
-
 	return &Group{Hierarchy: hierarchy}, nil
 }
 
-func ReadRequestRecord(reader *bufio.Reader, runStartTimestamp int64) (RequestRecord, error) {
-	fmt.Printf("READREQUESTRECORD_CALLED\n")
+func DecodeRequestRecord(reader *bufio.Reader, runStartTimestamp int64) (RequestRecord, error) {
+	fmt.Printf("DECODEREQUESTRECORD_CALLED\n")
 	var record RequestRecord
 
-	group, err := ReadGroup(reader)
+	typeByte, err := reader.ReadByte()
 	if err != nil {
-		// Error already logged in ReadGroup
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return RequestRecord{}, ErrPartialRecord
+		}
+		return RequestRecord{}, err
+	}
+	if typeByte != RequestRecordType {
+		return RequestRecord{}, fmt.Errorf("DECODEREQUESTRECORD_ERR: Mismatched type byte %d", typeByte)
+	}
+
+	group, err := DecodeGroup(reader) // Changed from ReadGroup
+	if err != nil {
 		return record, err
 	}
 	record.Group = group
-	// The existing l.Debugf calls were here, convert them:
-	// l.Debugf("ReadRequestRecord: Called.") -> This is now the entry log above.
-	// l.Debugf("ReadRequestRecord: ReadGroup error: %v", err) -> Covered by ReadGroup
-	// l.Debugf("ReadRequestRecord: Successfully decoded groupHierarchy with %d groups. Continuing to decode other fields.", len(group.Hierarchy))
-	fmt.Printf("READREQUESTRECORD_GROUP_SUCCESS: Groups: %d\n", len(group.Hierarchy))
-
+	fmt.Printf("DECODEREQUESTRECORD_GROUP_SUCCESS: Groups: %d\n", len(group.Hierarchy))
 
 	record.Name, err = ReadCachedSanitizedString(reader)
 	if err != nil {
-		fmt.Printf("READREQUESTRECORD_ERR: Name: %v\n", err)
 		return record, err
 	}
 
 	start, err := ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READREQUESTRECORD_ERR: StartTimestamp: %v\n", err)
 		return record, err
 	}
 	record.StartTimestamp = int64(start) + runStartTimestamp
 
 	end, err := ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READREQUESTRECORD_ERR: EndTimestamp: %v\n", err)
 		return record, err
 	}
 	record.EndTimestamp = int64(end) + runStartTimestamp
 
 	record.Status, err = ReadBool(reader)
 	if err != nil {
-		fmt.Printf("READREQUESTRECORD_ERR: Status: %v\n", err)
 		return record, err
 	}
 
 	errorMessage, err := ReadCachedSanitizedString(reader)
 	if err != nil {
-		fmt.Printf("READREQUESTRECORD_ERR: ErrorMessage: %v\n", err)
 		return record, err
 	}
 	if errorMessage != "" {
@@ -313,84 +355,91 @@ func ReadRequestRecord(reader *bufio.Reader, runStartTimestamp int64) (RequestRe
 	}
 
 	record.ResponseTime = int32(record.EndTimestamp - record.StartTimestamp)
-
-	if record.EndTimestamp != math.MinInt64 {
-		record.Incoming = false
-	} else {
-		record.Incoming = true
-	}
-
+	record.Incoming = record.EndTimestamp == math.MinInt64
 	return record, nil
 }
 
-func ReadGroupRecord(reader *bufio.Reader, runStartTimestamp int64) (GroupRecord, error) {
-	fmt.Printf("READGROUPRECORD_CALLED\n")
+func DecodeGroupRecord(reader *bufio.Reader, runStartTimestamp int64) (GroupRecord, error) {
+	fmt.Printf("DECODEGROUPRECORD_CALLED\n")
 	var record GroupRecord
 
-	group, err := ReadGroup(reader)
+	typeByte, err := reader.ReadByte()
 	if err != nil {
-		// Error logged in ReadGroup
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return GroupRecord{}, ErrPartialRecord
+		}
+		return GroupRecord{}, err
+	}
+	if typeByte != GroupRecordType {
+		return GroupRecord{}, fmt.Errorf("DECODEGROUPRECORD_ERR: Mismatched type byte %d", typeByte)
+	}
+
+	group, err := DecodeGroup(reader) // Changed from ReadGroup
+	if err != nil {
 		return record, err
 	}
 	record.Group = *group
 
 	start, err := ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READGROUPRECORD_ERR: StartTimestamp: %v\n", err)
 		return record, err
 	}
 	record.StartTimestamp = int64(start) + runStartTimestamp
 
 	end, err := ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READGROUPRECORD_ERR: EndTimestamp: %v\n", err)
 		return record, err
 	}
 	record.EndTimestamp = int64(end) + runStartTimestamp
 
 	record.CumulatedResponseTime, err = ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READGROUPRECORD_ERR: CumulatedResponseTime: %v\n", err)
 		return record, err
 	}
 
 	record.Status, err = ReadBool(reader)
 	if err != nil {
-		fmt.Printf("READGROUPRECORD_ERR: Status: %v\n", err)
 		return record, err
 	}
 
 	record.Duration = int32(record.EndTimestamp - record.StartTimestamp)
-
 	return record, nil
 }
 
-func ReadUserRecord(reader *bufio.Reader, runStartTimestamp int64, scenarios []string) (UserRecord, error) {
-	fmt.Printf("READUSERRECORD_CALLED\n")
+func DecodeUserRecord(reader *bufio.Reader, runStartTimestamp int64, scenarios []string) (UserRecord, error) {
+	fmt.Printf("DECODEUSERRECORD_CALLED\n")
 	var record UserRecord
+
+	typeByte, err := reader.ReadByte()
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return UserRecord{}, ErrPartialRecord
+		}
+		return UserRecord{}, err
+	}
+	if typeByte != UserRecordType {
+		return UserRecord{}, fmt.Errorf("DECODEUSERRECORD_ERR: Mismatched type byte %d", typeByte)
+	}
 
 	scenarioIndex, err := ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READUSERRECORD_ERR: ScenarioIndex: %v\n", err)
 		return record, err
 	}
 
 	if scenarioIndex < 0 || scenarioIndex >= int32(len(scenarios)) {
 		err = fmt.Errorf("invalid scenario index: %d", scenarioIndex)
-		fmt.Printf("READUSERRECORD_ERR: %v\n", err)
+		fmt.Printf("DECODEUSERRECORD_ERR: %v\n", err)
 		return record, err
 	}
 	record.Scenario = scenarios[scenarioIndex]
 
 	record.Event, err = ReadBool(reader)
 	if err != nil {
-		fmt.Printf("READUSERRECORD_ERR: Event: %v\n", err)
 		return record, err
 	}
 
 	timestamp, err := ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READUSERRECORD_ERR: Timestamp: %v\n", err)
 		return record, err
 	}
 	record.Timestamp = int64(timestamp) + runStartTimestamp
@@ -398,19 +447,28 @@ func ReadUserRecord(reader *bufio.Reader, runStartTimestamp int64, scenarios []s
 	return record, nil
 }
 
-func ReadErrorRecord(reader *bufio.Reader, runStartTimestamp int64) (ErrorRecord, error) {
-	fmt.Printf("READERRORRECORD_CALLED\n")
+func DecodeErrorRecord(reader *bufio.Reader, runStartTimestamp int64) (ErrorRecord, error) {
+	fmt.Printf("DECODEERRORRECORD_CALLED\n")
 	var record ErrorRecord
+
+	typeByte, err := reader.ReadByte()
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return ErrorRecord{}, ErrPartialRecord
+		}
+		return ErrorRecord{}, err
+	}
+	if typeByte != ErrorRecordType {
+		return ErrorRecord{}, fmt.Errorf("DECODEERRORRECORD_ERR: Mismatched type byte %d", typeByte)
+	}
 
 	message, err := ReadCachedSanitizedString(reader)
 	if err != nil {
-		fmt.Printf("READERRORRECORD_ERR: Message: %v\n", err)
 		return record, err
 	}
 
 	timestamp, err := ReadInt(reader)
 	if err != nil {
-		fmt.Printf("READERRORRECORD_ERR: Timestamp: %v\n", err)
 		return record, err
 	}
 	record.Timestamp = int64(timestamp) + runStartTimestamp
@@ -419,52 +477,51 @@ func ReadErrorRecord(reader *bufio.Reader, runStartTimestamp int64) (ErrorRecord
 	return record, nil
 }
 
-// This is the active ReadNotHeaderRecord function
-func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenarios []string) (interface{}, error) {
+// This is the active ReadNotHeaderRecord function that will be refactored per Step 4
+func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestamp int64, scenarios []string) (interface{}, error) {
 	fmt.Printf("RNHR_CALLED\n")
-	headBytes, errPeek := reader.Peek(8)
-	if errPeek != nil && errPeek != io.EOF {
-		 fmt.Printf("RNHR_PEEK_ERR: %v\n", errPeek)
-	} else if errPeek == nil {
-		 fmt.Printf("RNHR_PEEKED_BYTES: %s\n", hex.EncodeToString(headBytes))
-	}
-
-	recordTypeByte, err := reader.ReadByte()
+	peekedType, err := reader.Peek(1)
 	if err != nil {
-		fmt.Printf("RNHR_READBYTE_ERR: %v\n", err)
-		return nil, err
+		if errors.Is(err, io.EOF) { // Clean EOF before even a type byte can be peeked
+			fmt.Printf("RNHR_PEEK_EOF: %v\n", err)
+			return nil, io.EOF
+		}
+		fmt.Printf("RNHR_PEEK_ERR: %v\n", err)
+		return nil, err // Other peek error
 	}
-	fmt.Printf("RNHR_READ_TYPE_BYTE: %d\n", recordTypeByte)
+	recordTypeByte := peekedType[0]
+	// No RecordHeader type here, just use the byte
+	fmt.Printf("RNHR_PEEKED_TYPE_BYTE: %d\n", recordTypeByte)
 
-	switch recordTypeByte {
+	switch recordTypeByte { // Switched to recordTypeByte
+	case UserRecordType: // These are constants like 0, 1, 2 etc.
+		fmt.Printf("RNHR_DELEGATING_TO_DECODE_USER\n")
+		return DecodeUserRecord(reader, runStartTimestamp, scenarios)
 	case RequestRecordType:
-		fmt.Printf("RNHR_DECODING_REQUEST\n")
-		return ReadRequestRecord(reader, runStartTimestapm)
+		fmt.Printf("RNHR_DELEGATING_TO_DECODE_REQUEST\n")
+		return DecodeRequestRecord(reader, runStartTimestamp) // scenarios not needed
 	case GroupRecordType:
-		fmt.Printf("RNHR_DECODING_GROUP\n")
-		return ReadGroupRecord(reader, runStartTimestapm)
-	case UserRecordType:
-		fmt.Printf("RNHR_DECODING_USER\n")
-		return ReadUserRecord(reader, runStartTimestapm, scenarios)
+		fmt.Printf("RNHR_DELEGATING_TO_DECODE_GROUP\n")
+		return DecodeGroupRecord(reader, runStartTimestamp) // scenarios not needed
 	case ErrorRecordType:
-		fmt.Printf("RNHR_DECODING_ERROR\n")
-		return ReadErrorRecord(reader, runStartTimestapm)
+		fmt.Printf("RNHR_DELEGATING_TO_DECODE_ERROR\n")
+		return DecodeErrorRecord(reader, runStartTimestamp) // scenarios not needed
 	default:
-		var contextBytesForError []byte
+		// Unknown type: consume the bad byte from stream and return error
+		_, _ = reader.ReadByte()
+		errUnknown := fmt.Errorf("unknown record type after peek: %d", recordTypeByte)
+		// Log context bytes using hex.EncodeToString if available
 		var hexContext string = "N/A"
-		if errPeek == nil && headBytes != nil {
-			contextBytesForError = headBytes
-		} else {
-			peekAgainBytes, peekErr := reader.Peek(16) // Try to peek more for context
-			if peekErr == nil {
-				contextBytesForError = peekAgainBytes
+		if headBytes, peekErr := reader.Peek(8); peekErr == nil { // Re-peek for context after consuming bad byte
+			hexContext = hex.EncodeToString(headBytes)
+		} else { // if re-peek fails, use initial peek if it was successful
+			if err == nil && peekedType != nil { // err here refers to original peek error
+				// This is tricky, original peekedType is only 1 byte.
+				// Best to just indicate the bad byte.
+				hexContext = hex.EncodeToString(peekedType)
 			}
 		}
-		if len(contextBytesForError) > 0 {
-            hexContext = hex.EncodeToString(contextBytesForError)
-        }
-		errUnknown := fmt.Errorf("unknown record type: %d", recordTypeByte)
-		fmt.Printf("RNHR_UNKNOWN_TYPE_ERR: %v. Context: %s\n", errUnknown, hexContext)
+		fmt.Printf("RNHR_UNKNOWN_PEEKED_TYPE_ERR: %v. Context after bad byte: %s\n", errUnknown, hexContext)
 		return nil, errUnknown
 	}
 }

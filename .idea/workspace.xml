@@ -5,8 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="8b159ec5-815e-427e-b12d-07e6a6df2be7" name="Changes" comment="decreased peek to force errors">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gatlingparser/test.log" beforeDir="false" afterPath="$PROJECT_DIR$/gatlingparser/test.log" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/gatlingparser/testlog_concurrent.log" beforeDir="false" afterPath="$PROJECT_DIR$/gatlingparser/testlog_concurrent.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -17,7 +18,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="feature/gatling-binary-log" />
+        <entry key="$PROJECT_DIR$" value="debug/concurrent-parser-logging" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -56,7 +57,7 @@
     &quot;RunOnceActivity.go.migrated.go.modules.settings&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.go.modules.automatic.dependencies.download&quot;: &quot;true&quot;,
     &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250602_0000&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;debug/concurrent-parser-logging&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;refactor/partial-read-fix-manual&quot;,
     &quot;go.import.settings.migrated&quot;: &quot;true&quot;,
     &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
@@ -233,7 +234,7 @@
       <workItem from="1741202752291" duration="1629000" />
       <workItem from="1741617187639" duration="59056000" />
       <workItem from="1742051039733" duration="3842000" />
-      <workItem from="1748875119289" duration="4614000" />
+      <workItem from="1748875119289" duration="10172000" />
     </task>
     <task id="LOCAL-00001" summary="set sleep while waiting fro EOF to fixed 500ms + added --stop-timeout mechanism for binary file processing">
       <option name="closed" value="true" />

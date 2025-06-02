@@ -28,8 +28,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
-	"fmt" // Ensure fmt is imported
+	"errors" // Ensure errors is imported
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -91,8 +91,6 @@ func lookupTargetDir(ctx context.Context, dir string) error {
 
 	l.Infof("Looking for target directory... %s", cleanDir)
 	for {
-		// This block checks if stop signal is received from user
-		// and stops further lookup
 		select {
 		case <-ctx.Done():
 			return errStoppedByUser
@@ -105,7 +103,6 @@ func lookupTargetDir(ctx context.Context, dir string) error {
 				time.Sleep(loopTimeout)
 				continue
 			}
-			// Log the specific error type to help diagnose issues
 			return fmt.Errorf("error accessing path %s (error type: %T): %w", dir, err, err)
 		}
 
@@ -126,11 +123,9 @@ func lookupTargetDir(ctx context.Context, dir string) error {
 }
 
 func walkFunc(path string, info os.FileInfo, err error) error {
-	// First check if there was an error accessing the file/directory
 	if err != nil {
-		// Either log the error and continue, or return it to stop walking
 		l.Errorf("Error accessing path %s: %v", path, err)
-		return nil // or return err if you want to stop walking
+		return nil
 	}
 
 	if info.IsDir() && resultDirNamePattern.MatchString(info.Name()) {
@@ -148,19 +143,11 @@ func walkFunc(path string, info os.FileInfo, err error) error {
 	return nil
 }
 
-// logic is the following: at the start of the application current timestamp is saved
-// then traversing over all directories inside target dir is initiated.
-// Every dir name is matched against pattern, if found - modification time of directory is
-// compared with application start time.
-//
-// This function stops as soon as directory modification time is after start time.
 func lookupResultsDir(ctx context.Context, dir string) error {
 	const loopTimeout = 5 * time.Second
 
 	l.Infof("Searching for results directory in %s...", dir)
 	for {
-		// This block checks if stop signal is received from user
-		// and stops further lookup
 		select {
 		case <-ctx.Done():
 			return errStoppedByUser
@@ -186,8 +173,6 @@ func waitForLog(ctx context.Context) error {
 
 	l.Infoln("Searching for " + simulationLogFileName + " file...")
 	for {
-		// This block checks if stop signal is received from user
-		// and stops further lookup
 		select {
 		case <-ctx.Done():
 			return errStoppedByUser
@@ -204,7 +189,6 @@ func waitForLog(ctx context.Context) error {
 			return fmt.Errorf("failed to stat simulation log file %s: %w", logFile, err)
 		}
 
-		// wait till at least first line is present to prevent EOF error
 		if fInfo.Size() < 300 {
 			time.Sleep(loopTimeout)
 			continue
@@ -220,10 +204,8 @@ func waitForLog(ctx context.Context) error {
 			continue
 		}
 
-		// Check file permissions
 		isReadable := true
 		if runtime.GOOS != "windows" {
-			// On Unix-like systems, check for read permission (0644 = 420 in decimal)
 			isReadable = fInfo.Mode().Perm()&0644 == 0644
 		}
 
@@ -243,34 +225,24 @@ func timeFromUnixBytes(ub []byte) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("Failed to parse timestamp as integer: %w", err)
 	}
-	// A workaround that adds random amount of microseconds to the timestamp
-	// so db entries will (should) not be overwritten
 	return time.Unix(0, timeStamp*oneMillisecond+rand.Int63n(oneMillisecond)), nil
 }
 
 func userLineProcess(lb []byte) error {
 	split := bytes.Split(lb, tabSep)
-
-	splitCount := len(split)
-
-	if splitCount != 4 {
-		return errors.New(fmt.Sprintf("USER line contains %d instead of 4 values", splitCount))
+	if len(split) != 4 {
+		return errors.New(fmt.Sprintf("USER line contains %d instead of 4 values", len(split)))
 	}
 	scenario := string(split[1])
-	// Using the second of the two timestamps
-	// A user life duration may come in handy later
 	timestamp, err := timeFromUnixBytes(bytes.TrimSpace(split[3]))
 	if err != nil {
 		return err
 	}
-
 	influx.SendUserLineData(timestamp, scenario, string(split[2]))
-
 	return nil
 }
 
 func requestLineProcess(lb []byte) error {
-
 	split := bytes.Split(lb, tabSep)
 	if len(split) != 7 {
 		return errors.New("REQUEST line contains unexpected amount of values")
@@ -301,38 +273,33 @@ func requestLineProcess(lb []byte) error {
 			"nodeName":        nodeName,
 			"errorMessage":    string(bytes.TrimSpace(split[6])),
 		},
-		map[string]interface{}{
-			"duration": int(end - start),
-		},
+		map[string]interface{}{"duration": int(end - start)},
 		timestamp,
 	)
 	if err != nil {
 		return fmt.Errorf("Error creating new point with request data: %w", err)
 	}
-
 	influx.SendPoint(point)
-
 	return nil
 }
 
 func groupLineProcess(lb []byte) error {
 	split := bytes.Split(lb, tabSep)
-
 	if len(split) != 6 {
 		return errors.New("GROUP line contains unexpected amount of values")
 	}
 
 	start, err := strconv.ParseInt(string(split[2]), 10, 64)
 	if err != nil {
-		return fmt.Errorf("Failed to parse group start time in line as integer: %w", err)
+		return fmt.Errorf("Failed to parse group start time: %w", err)
 	}
 	end, err := strconv.ParseInt(string(split[3]), 10, 64)
 	if err != nil {
-		return fmt.Errorf("Failed to parse group end time in line as integer: %w", err)
+		return fmt.Errorf("Failed to parse group end time: %w", err)
 	}
 	rawDuration, err := strconv.ParseInt(string(split[4]), 10, 32)
 	if err != nil {
-		return fmt.Errorf("Failed to parse group raw duration in line as integer: %w", err)
+		return fmt.Errorf("Failed to parse group raw duration: %w", err)
 	}
 	timestamp, err := timeFromUnixBytes(split[3])
 	if err != nil {
@@ -349,23 +316,16 @@ func groupLineProcess(lb []byte) error {
 			"testEnvironment": testEnvironment,
 			"nodeName":        nodeName,
 		},
-		map[string]interface{}{
-			"totalDuration": int(end - start),
-			"rawDuration":   int(rawDuration),
-		},
+		map[string]interface{}{"totalDuration": int(end - start), "rawDuration": int(rawDuration)},
 		timestamp,
 	)
 	if err != nil {
 		return fmt.Errorf("Error creating new point with group data: %w", err)
 	}
-
 	influx.SendPoint(point)
-
 	return nil
 }
 
-// This method should be called first when parsing started as it is based
-// on information from the header row
 func runLineProcess(lb []byte) error {
 	split := bytes.Split(lb, tabSep)
 	if len(split) != runLineLen {
@@ -379,29 +339,20 @@ func runLineProcess(lb []byte) error {
 		return err
 	}
 
-	// This will initialize required data for influx client
 	influx.InitTestInfo(systemUnderTest, testEnvironment, simulationName, description, nodeName, testStartTime)
-
 	point, err := influx.NewPoint(
 		"tests",
 		map[string]string{
-			"action":          "start",
-			"simulation":      simulationName,
-			"systemUnderTest": systemUnderTest,
-			"testEnvironment": testEnvironment,
-			"nodeName":        nodeName,
+			"action": "start", "simulation": simulationName,
+			"systemUnderTest": systemUnderTest, "testEnvironment": testEnvironment, "nodeName": nodeName,
 		},
-		map[string]interface{}{
-			"description": description,
-		},
+		map[string]interface{}{"description": description},
 		testStartTime,
 	)
 	if err != nil {
 		return fmt.Errorf("Error creating new point with test start data: %w", err)
 	}
-
 	influx.SendPoint(point)
-
 	return nil
 }
 
@@ -418,27 +369,20 @@ func errorLineProcess(lb []byte) error {
 	point, err := influx.NewPoint(
 		"errors",
 		map[string]string{
-			"systemUnderTest": systemUnderTest,
-			"testEnvironment": testEnvironment,
-			"nodeName":        nodeName,
-			"simulation":      simulationName,
+			"systemUnderTest": systemUnderTest, "testEnvironment": testEnvironment,
+			"nodeName": nodeName, "simulation": simulationName,
 		},
-		map[string]interface{}{
-			"errorMessage": string(split[1]),
-		},
+		map[string]interface{}{"errorMessage": string(split[1])},
 		timestamp,
 	)
 	if err != nil {
 		return fmt.Errorf("Error creating new point with error data: %w", err)
 	}
-
 	influx.SendPoint(point)
-
 	return nil
 }
 
 func stringProcessor(lineBuffer []byte) error {
-
 	switch {
 	case requestLine.Match(lineBuffer):
 		return requestLineProcess(lineBuffer)
@@ -451,15 +395,10 @@ func stringProcessor(lineBuffer []byte) error {
 	case runLine.Match(lineBuffer):
 		err := runLineProcess(lineBuffer)
 		if err != nil {
-			// Wrapping in a fatal error because further processing is futile
-			err = fmt.Errorf("%v: %w", err, errFatal)
+			return fmt.Errorf("%v: %w", err, errFatal)
 		}
 		return err
 	default:
-		// If the line buffer contains unknown characters, convert bytes to hex string for better debugging
-		// hexLineBuffer := fmt.Sprintf("%X", lineBuffer)
-		//return fmt.Errorf("Unknown line type encountered: %s (hex: %s)", lineBuffer, hexLineBuffer)
-		// If string is longer than 24 chars, truncate it
 		if len(lineBuffer) > 24 {
 			lineBuffer = lineBuffer[:24]
 		}
@@ -470,48 +409,65 @@ func stringProcessor(lineBuffer []byte) error {
 func detectGatlingLogVersion(file *os.File) (string, error) {
 	defer func() {
 		if _, err := file.Seek(0, 0); err != nil {
-			// Log the error or handle it appropriately
 			l.Errorf("Failed to seek to beginning of file: %v", err)
 		}
 	}()
 	var firstByte byte
 	if err := binary.Read(file, currentByteOrder(), &firstByte); err != nil {
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return "", fmt.Errorf("file is empty")
 		}
-		if err == io.ErrUnexpectedEOF {
-			return "", fmt.Errorf("file is truncated")
+		// Check for ErrPartialRecord if binary.Read could return it (though less likely for a single byte)
+		if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, ErrPartialRecord) {
+			return "", fmt.Errorf("file is truncated or header incomplete: %w", err)
 		}
 		return "", fmt.Errorf("failed to read first byte: %w", err)
 	}
-	if firstByte == 0 {
-		msg, err := ReadRunMessage(bufio.NewReader(file))
-		if err == io.EOF {
-			return "", fmt.Errorf("The file %s is empty or contains no readable header data: %w", simulationLogFileName, err)
-		}
+
+	if firstByte == 0 { // Binary format
+		// Pass a new reader, as ReadRunMessage will consume bytes
+		runMsg, err := DecodeRunMessage(bufio.NewReader(file)) // Changed to DecodeRunMessage
 		if err != nil {
-			return "", err
-		}
-		return msg.GatlingVersion, nil
-	} else {
-		if offset, err := file.Seek(0, 0); err != nil {
-			return "", fmt.Errorf("failed to seek to beginning of file (offset %d): %w", offset, err)
-		}
-		reader := bufio.NewReader(file)
-		var line []byte
-		var err error
-		// skip assertion records if they present
-		for line, err = reader.ReadBytes('\n'); runLine.Match(line); {
-			if err != nil {
-				return "", err
+			// Check if the error is due to partial data (EOF / UnexpectedEOF wrapped in ErrPartialRecord)
+			if errors.Is(err, ErrPartialRecord) {
+				return "", fmt.Errorf("The file %s is empty or contains no readable header data (partial): %w", simulationLogFileName, err)
 			}
+			if errors.Is(err, io.EOF) { // Clean EOF after possibly reading some part of RunMessage
+				return "", fmt.Errorf("The file %s is empty or contains no readable header data (EOF): %w", simulationLogFileName, err)
+			}
+			return "", err // Other errors
 		}
-		split := bytes.Split(line, tabSep)
-		if len(split) != runLineLen {
-			return "", errors.New("RUN line contains unexpected amount of values")
+		// If DecodeRunMessage succeeded, we need to reset the file offset for subsequent full header parsing
+		if _, err := file.Seek(0, 0); err != nil {
+			return "", fmt.Errorf("failed to seek to beginning of file after version detection: %w", err)
 		}
-		return string(split[5]), nil
+		return runMsg.GatlingVersion, nil
 	}
+
+	// Text format
+	if _, err := file.Seek(0, 0); err != nil {
+		return "", fmt.Errorf("failed to seek to beginning of file: %w", err)
+	}
+	reader := bufio.NewReader(file)
+	var line []byte
+	var errRead error
+	for {
+		line, errRead = reader.ReadBytes('\n')
+		if errRead != nil {
+			return "", errRead
+		}
+		if runLine.Match(line) {
+			break
+		}
+		if !bytes.HasPrefix(line, []byte("ASSERT")) {
+			return "", errors.New("unexpected line before RUN line in text log")
+		}
+	}
+	split := bytes.Split(line, tabSep)
+	if len(split) != runLineLen {
+		return "", errors.New("RUN line contains unexpected amount of values for text log")
+	}
+	return string(split[5]), nil
 }
 
 func fileProcessor(ctx context.Context, file *os.File) {
@@ -521,8 +477,6 @@ func fileProcessor(ctx context.Context, file *os.File) {
 
 ParseLoop:
 	for {
-		// This block checks if stop signal is received from user
-		// and stops further processing
 		select {
 		case <-ctx.Done():
 			l.Infoln("Parser received closing signal. Processing stopped")
@@ -532,12 +486,10 @@ ParseLoop:
 
 		b, err := r.ReadBytes('\n')
 		if err == io.EOF {
-			// If no new lines read for more than value provided by 'stop-timeout' key then processing is stopped
 			if time.Now().After(startWait.Add(time.Duration(waitTime) * time.Second)) {
 				l.Infof("No new lines found for %d seconds. Stopping application...", waitTime)
 				break ParseLoop
 			}
-			// All new data is stored in buffer until next loop
 			buf.Write(b)
 			time.Sleep(time.Second)
 			continue
@@ -555,34 +507,39 @@ ParseLoop:
 				break ParseLoop
 			}
 		}
-		// Clean buffer after processing preparing for a new loop
 		buf.Reset()
-		// Reset a timeout timer
 		startWait = time.Now()
 	}
 	parserStopped <- struct{}{}
 }
 
 func processLogHeader(reader *bufio.Reader) (*RunMessage, []string, error) {
-	var recordType byte
-	err := binary.Read(reader, currentByteOrder(), &recordType)
+	var recordTypeByte byte
+	err := binary.Read(reader, currentByteOrder(), &recordTypeByte)
 	if err != nil {
+		// Check for ErrPartialRecord if binary.Read could somehow lead to it (less likely for single byte)
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, nil, fmt.Errorf("processLogHeader: reading type byte: %w", ErrPartialRecord)
+		}
 		return nil, nil, err
 	}
-	if recordType != 0 {
-		return nil, nil, fmt.Errorf("incorrect gatling log format: header record not found")
+	// Use the constant from decoders.go (assuming it's defined there, or locally if not)
+	if recordTypeByte != RunHeaderType {
+		return nil, nil, fmt.Errorf("incorrect gatling log format: header record not found, got type %d", recordTypeByte)
 	}
 
-	runMessage, scenarios, _, err := ReadHeader(reader)
+	runMessage, scenarios, _, err := ReadHeader(reader) // ReadHeader is in decoders.go
 	if err != nil {
+		// If ReadHeader returns ErrPartialRecord, propagate it
+		if errors.Is(err, ErrPartialRecord) {
+			// runMessage might be partially populated, return it along with error
+			return &runMessage, scenarios, fmt.Errorf("processLogHeader: ReadHeader: %w", ErrPartialRecord)
+		}
 		return &runMessage, scenarios, err
 	}
 
 	l.Infof("Starting collecting for Gatling %s with simulation %s, that started at %s\n",
-		runMessage.GatlingVersion,
-		runMessage.SimulationClassName,
-		time.UnixMilli(runMessage.Start),
-	)
+		runMessage.GatlingVersion, runMessage.SimulationClassName, time.UnixMilli(runMessage.Start))
 	l.Infof("Scenarios %s\n", scenarios)
 	return &runMessage, scenarios, nil
 }
@@ -600,61 +557,60 @@ func processRemainingRecords(
 	defer wg.Done()
 
 	latestReadTime := time.Now()
-	var consecutiveEOFCount int = 0
-	var recordCounter int = 0 
+	var recordCounter int = 0
 
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("PPR_CTX_DONE_LOOP_START: Records in session: %d\n", recordCounter) 
+			fmt.Printf("PPR_CTX_DONE_LOOP_START: Records in session: %d\n", recordCounter)
 			return
 		default:
 		}
-		
-		fmt.Printf("PPR_LOOP_ENTRY: ConsecutiveEOF: %d, LastReadTime: %s\n", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano)) 
 
-		fmt.Printf("PPR_CALLING_RNHR\n") 
-		record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
+		fmt.Printf("PPR_LOOP_ENTRY: LastReadTime: %s\n", latestReadTime.Format(time.RFC3339Nano))
+
+		if time.Now().After(latestReadTime.Add(time.Duration(stopTimeout) * time.Second)) {
+			fmt.Printf("PPR_TIMEOUT_PRE_READ: LRT: %s. Records in session: %d. Exiting.\n", latestReadTime.Format(time.RFC3339Nano), recordCounter)
+			return
+		}
+
+		fmt.Printf("PPR_CALLING_RNHR\n")
+		record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios) // Calls refactored RNHR from decoders.go
 
 		if err == nil {
 			recordCounter++
-			fmt.Printf("PPR_RNHR_SUCCESS: Record #%d, Type %T\n", recordCounter, record) 
-			consecutiveEOFCount = 0 
+			fmt.Printf("PPR_RNHR_SUCCESS: Record #%d, Type %T\n", recordCounter, record)
 			select {
 			case records <- record:
 				oldLRT := latestReadTime
 				latestReadTime = time.Now()
-				fmt.Printf("PPR_SEND_SUCCESS: Record #%d. LRT %s -> %s\n", recordCounter, oldLRT.Format(time.RFC3339Nano), latestReadTime.Format(time.RFC3339Nano)) 
+				fmt.Printf("PPR_SEND_SUCCESS: Record #%d. LRT %s -> %s\n", recordCounter, oldLRT.Format(time.RFC3339Nano), latestReadTime.Format(time.RFC3339Nano))
 			case <-ctx.Done():
-				fmt.Printf("PPR_CTX_DONE_SENDING: Record #%d. Total in session: %d\n", recordCounter, recordCounter) 
+				fmt.Printf("PPR_CTX_DONE_SENDING: Record #%d. Total in session: %d\n", recordCounter, recordCounter)
 				return
 			}
-			continue 
+			continue
 		}
 
-		if err == io.EOF {
-			fmt.Printf("PPR_RNHR_EOF_ERROR: %v\n", err) 
-			consecutiveEOFCount++
-			fmt.Printf("PPR_EOF_DETAILS: Count %d. LRT: %s. TimeoutDur: %d\n", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano), stopTimeout) 
-			if time.Now().After(latestReadTime.Add(time.Duration(stopTimeout) * time.Second)) {
-				fmt.Printf("PPR_TIMEOUT_AFTER_EOF: LRT: %s. Records in session: %d. Exiting.\n", latestReadTime.Format(time.RFC3339Nano), recordCounter) 
-				return
-			}
+		// Error from ReadNotHeaderRecord
+		fmt.Printf("PPR_RNHR_ERROR: Type: %[1]T, Value: %[1]v\n", err)
 
-			sleepDuration := 100 * time.Millisecond
-			if consecutiveEOFCount >= 5 {
-				sleepDuration = 500 * time.Millisecond
-			}
-			fmt.Printf("PPR_SLEEPING_EOF: %s for EOF #%d\n", sleepDuration, consecutiveEOFCount) 
-			time.Sleep(sleepDuration)
-			continue 
+		if errors.Is(err, ErrPartialRecord) { // Use errors.Is to check for ErrPartialRecord
+			fmt.Printf("PPR_PARTIAL_RECORD_HANDLING (%v). Updating LRT and sleeping to retry same record.\n", err)
+			latestReadTime = time.Now() // Still trying for current record, count as activity
+		} else if errors.Is(err, io.EOF) { // Changed from err == io.EOF to errors.Is
+			fmt.Printf("PPR_CLEAN_EOF_FROM_RNHR. LastReadTime %s. Will check timeout in next loop iteration.\n", latestReadTime.Format(time.RFC3339Nano))
+			// latestReadTime is NOT updated for clean EOF from RNHR's Peek. Timeout will be based on last actual success or partial try.
+		} else { // Other errors (e.g., unknown record type from RNHR after consuming byte)
+			fmt.Printf("PPR_OTHER_ERROR_UPDATING_LRT (%v)\n", err)
+			latestReadTime = time.Now() // Activity, trying to get past this error
 		}
-		
-		fmt.Printf("PPR_RNHR_OTHER_ERROR: %v. Pausing.\n", err) 
-		time.Sleep(50 * time.Millisecond)
+
+		time.Sleep(100 * time.Millisecond)
 		continue
 	}
 }
+
 type RecordsWriter interface {
 	writeAll(wg *sync.WaitGroup, records <-chan interface{})
 }
@@ -674,32 +630,27 @@ func (w *InfluxRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interf
 				l.Errorf("Error creating new point with test start data: %v", err)
 			}
 			influx.SendPoint(point)
-
 		case RequestRecord:
 			point, err := r.ToInfluxPoint()
 			if err != nil {
 				l.Errorf("Error creating new point with request data: %v", err)
 			}
 			influx.SendPoint(point)
-
 		case GroupRecord:
 			point, err := r.ToInfluxPoint()
 			if err != nil {
 				l.Errorf("Error creating new point with group data: %v", err)
 			}
 			influx.SendPoint(point)
-
 		case UserRecord:
 			timestamp, scenario, status := r.ToInfluxUserLineParams()
 			influx.SendUserLineData(timestamp, scenario, status)
-
 		case ErrorRecord:
 			point, err := r.ToInfluxPoint()
 			if err != nil {
 				l.Errorf("Error creating new point with error data: %v", err)
 			}
 			influx.SendPoint(point)
-
 		default:
 			l.Errorf("Unknown record type: %T", r)
 		}
@@ -711,35 +662,23 @@ type SumRecordsWriter struct{}
 func (w *SumRecordsWriter) writeAll(wg *sync.WaitGroup, records <-chan interface{}) {
 	defer wg.Done()
 	var (
-		users       = 0
-		reqs        = 0
-		rumMessages = 0
-		errors      = 0
-		groups      = 0
+		users, reqs, rumMessages, errors, groups int
 	)
-
 	for record := range records {
-		// l.Infoln(record)
-		switch r := record.(type) {
+		switch record.(type) {
 		case RunMessage:
-			rumMessages += 1
-
+			rumMessages++
 		case RequestRecord:
-			reqs += 1
-
+			reqs++
 		case GroupRecord:
-			groups += 1
-
+			groups++
 		case UserRecord:
-			users += 1
-
+			users++
 		case ErrorRecord:
-			errors += 1
-
+			errors++
 		default:
-			l.Errorf("Unknown record type: %T", r)
+			l.Errorf("Unknown record type: %T", record)
 		}
-
 	}
 	l.Debugf("msg = %d, users = %d, reqs = %d, groups = %d, errors = %d\n", rumMessages, users, reqs, groups, errors)
 }
@@ -750,7 +689,11 @@ func fileProcessorBinary(ctx context.Context, file *os.File, recordsWriter Recor
 
 	runMessage, scenarios, err := processLogHeader(reader)
 	if err != nil {
-		l.Errorf("Log file %s reading error: %v", file.Name(), err)
+		if errors.Is(err, ErrPartialRecord) {
+			l.Errorf("Log file %s reading error (possibly partial header): %v", file.Name(), err)
+		} else {
+			l.Errorf("Log file %s reading error: %v", file.Name(), err)
+		}
 		return
 	}
 
@@ -771,6 +714,7 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	file, err := os.Open(logDir + "/" + simulationLogFileName)
 	if err != nil {
 		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
+		return
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
@@ -780,8 +724,13 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 
 	ver, err := detectGatlingLogVersion(file)
 	if err != nil {
-		l.Errorf("Failed to read %s file: %v\n", simulationLogFileName, err)
+		l.Errorf("Failed to detect Gatling log version for %s: %v\n", simulationLogFileName, err)
+		if errors.Is(err, ErrPartialRecord) {
+			l.Errorln("File too short or header incomplete for version detection.")
+		}
+		return
 	}
+
 	if !semver.IsValid(ver) {
 		ver = "v" + ver
 	}
@@ -793,7 +742,6 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	}
 }
 
-// RunMain performs main application logic
 func RunMain(cmd *cobra.Command, dir string) {
 	systemUnderTest, _ = cmd.Flags().GetString("system-under-test")
 	testEnvironment, _ = cmd.Flags().GetString("test-environment")
@@ -805,6 +753,7 @@ func RunMain(cmd *cobra.Command, dir string) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		l.Errorf("Failed to construct an absolute path for %s: %v", dir, err)
+		return
 	}
 
 	if err := lookupTargetDir(cmd.Context(), abs); err != nil {
@@ -842,13 +791,10 @@ func RunMain(cmd *cobra.Command, dir string) {
 FinisherLoop:
 	for {
 		select {
-		// If top level context is cancelled we first stop the parser
 		case <-cmd.Context().Done():
 			pCancel()
-		// Then wait for parser to stop and stop client processing
 		case <-parserStopped:
 			iCancel()
-			// In case parser finished processing on its own, we cancel its context
 			pCancel()
 			break FinisherLoop
 		}
