@@ -562,47 +562,32 @@ func processRemainingRecords(
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("PPR_CTX_DONE_LOOP_START: Records in session: %d\n", recordCounter)
 			return
 		default:
 		}
 
-		fmt.Printf("PPR_LOOP_ENTRY: LastReadTime: %s\n", latestReadTime.Format(time.RFC3339Nano))
-
 		if time.Now().After(latestReadTime.Add(time.Duration(stopTimeout) * time.Second)) {
-			fmt.Printf("PPR_TIMEOUT_PRE_READ: LRT: %s. Records in session: %d. Exiting.\n", latestReadTime.Format(time.RFC3339Nano), recordCounter)
 			return
 		}
 
-		fmt.Printf("PPR_CALLING_RNHR\n")
-		record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios) // Calls refactored RNHR from decoders.go
+		record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
 
 		if err == nil {
 			recordCounter++
-			fmt.Printf("PPR_RNHR_SUCCESS: Record #%d, Type %T\n", recordCounter, record)
 			select {
 			case records <- record:
-				oldLRT := latestReadTime
 				latestReadTime = time.Now()
-				fmt.Printf("PPR_SEND_SUCCESS: Record #%d. LRT %s -> %s\n", recordCounter, oldLRT.Format(time.RFC3339Nano), latestReadTime.Format(time.RFC3339Nano))
 			case <-ctx.Done():
-				fmt.Printf("PPR_CTX_DONE_SENDING: Record #%d. Total in session: %d\n", recordCounter, recordCounter)
 				return
 			}
 			continue
 		}
 
-		// Error from ReadNotHeaderRecord
-		fmt.Printf("PPR_RNHR_ERROR: Type: %[1]T, Value: %[1]v\n", err)
-
-		if errors.Is(err, ErrPartialRecord) { // Use errors.Is to check for ErrPartialRecord
-			fmt.Printf("PPR_PARTIAL_RECORD_HANDLING (%v). Updating LRT and sleeping to retry same record.\n", err)
+		if errors.Is(err, ErrPartialRecord) {
 			latestReadTime = time.Now() // Still trying for current record, count as activity
-		} else if errors.Is(err, io.EOF) { // Changed from err == io.EOF to errors.Is
-			fmt.Printf("PPR_CLEAN_EOF_FROM_RNHR. LastReadTime %s. Will check timeout in next loop iteration.\n", latestReadTime.Format(time.RFC3339Nano))
+		} else if errors.Is(err, io.EOF) {
 			// latestReadTime is NOT updated for clean EOF from RNHR's Peek. Timeout will be based on last actual success or partial try.
-		} else { // Other errors (e.g., unknown record type from RNHR after consuming byte)
-			fmt.Printf("PPR_OTHER_ERROR_UPDATING_LRT (%v)\n", err)
+		} else {
 			latestReadTime = time.Now() // Activity, trying to get past this error
 		}
 
