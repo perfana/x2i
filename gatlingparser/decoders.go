@@ -3,11 +3,13 @@ package gatlingparser
 import (
 	"bufio"
 	"encoding/binary"
-	"encoding/hex" // Ensured import
-	"fmt"
+	"encoding/hex" 
+	"fmt" // Ensure fmt is imported
 	"io"
 	"math"
 	"strings"
+
+	// l "github.com/perfana/x2i/logger" // Logger import is removed
 )
 
 const (
@@ -21,16 +23,13 @@ const (
 func ReadInt(reader *bufio.Reader) (int32, error) {
 	var i int32
 	const int32ByteSize = 4
-	// l.Debugf("ReadInt: Attempting to read %d bytes for int32.", int32ByteSize)
 	fmt.Printf("READINT_ATTEMPT_READ_4_BYTES\n")
 
 	err := binary.Read(reader, currentByteOrder(), &i)
 	if err != nil {
-		// l.Debugf("ReadInt: binary.Read error: %v. Value of i before error (if any part read): %d", err, i)
 		fmt.Printf("READINT_BINARY_READ_ERR: %v. Value: %d\n", err, i)
 		return 0, err
 	}
-	// l.Debugf("ReadInt: Successfully read value: %d", i)
 	fmt.Printf("READINT_SUCCESS: Value: %d\n", i)
 	return i, nil
 }
@@ -51,7 +50,7 @@ func sanitize(s string) string {
 }
 
 func ReadString(reader *bufio.Reader) (string, error) {
-	fmt.Printf("READSTRING_CALLED\n")
+	fmt.Printf("READSTRING_CALLED\n") // As per ReadCString -> ReadString
 	strLength, err := ReadInt(reader)
 	if err != nil {
 		fmt.Printf("READSTRING_ERR: reading length: %v\n", err)
@@ -68,7 +67,7 @@ func ReadString(reader *bufio.Reader) (string, error) {
 		return "", err
 	}
 
-	if strLength > 2000 { // Assuming this is a reasonable max
+	if strLength > 2000 { 
 		err = fmt.Errorf("string length too large: %d", strLength)
 		fmt.Printf("READSTRING_ERR: %v\n", err)
 		return "", err
@@ -80,15 +79,14 @@ func ReadString(reader *bufio.Reader) (string, error) {
 		fmt.Printf("READSTRING_ERR: reading bytes: %v\n", err)
 		return "", err
 	}
-	// skip byte of internal Java string serialization format ('coder' field in String class)
-	_, err = reader.ReadByte()
+	
+	_, err = reader.ReadByte() // skip byte of internal Java string serialization format ('coder' field in String class)
 	if err != nil {
 		fmt.Printf("READSTRING_ERR: skipping coder byte: %v\n", err)
 		return "", err
 	}
 	readString := string(strBytes)
-	// This existing fmt.Printf is fine, can be kept or removed if too noisy later
-	// fmt.Printf("DEBUG: Read string as %q\n", readString) 
+	// fmt.Printf("DEBUG: Read string as %q\n", readString) // This is an existing debug line, keep as is or remove if too noisy. For now, keeping.
 	return readString, nil
 }
 
@@ -103,7 +101,7 @@ func ReadSanitizedString(reader *bufio.Reader) (string, error) {
 var stringCache = make(map[int32]string)
 
 func ReadCachedSanitizedString(reader *bufio.Reader) (string, error) {
-	fmt.Printf("READCACHEDSANITIZEDSTRING_CALLED\n")
+	fmt.Printf("READCACHEDSANITIZEDSTRING_CALLED\n") // As per ReadCachedStringAsReference -> ReadCachedSanitizedString
 	cachedIndex, err := ReadInt(reader)
 	if err != nil {
 		fmt.Printf("READCACHEDSANITIZEDSTRING_ERR: reading index: %v\n", err)
@@ -135,7 +133,7 @@ func ReadBool(reader *bufio.Reader) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return boolByte != 0, nil // transform byte to bool
+	return boolByte != 0, nil 
 }
 
 func ReadByteArray(reader *bufio.Reader) ([]byte, error) {
@@ -189,7 +187,7 @@ func ReadRunMessage(reader *bufio.Reader) (RunMessage, error) {
 		fmt.Printf("READRUNMESSAGE_ERR: RunDescription: %v\n", err)
 		return result, err
 	}
-	result.SimulationId = "" // not used
+	result.SimulationId = "" 
 
 	return result, nil
 }
@@ -235,7 +233,7 @@ func ReadHeader(reader *bufio.Reader) (RunMessage, []string, [][]byte, error) {
 }
 
 func ReadGroup(reader *bufio.Reader) (*Group, error) {
-	fmt.Printf("READGROUP_CALLED\n")
+	fmt.Printf("READGROUP_CALLED\n") // As per ReadGroupHierarchy -> ReadGroup
 	const maxHierarchyLength = 2000 
 
 	hierarchyLength, err := ReadInt(reader)
@@ -268,11 +266,16 @@ func ReadRequestRecord(reader *bufio.Reader, runStartTimestamp int64) (RequestRe
 
 	group, err := ReadGroup(reader)
 	if err != nil {
-		// fmt.Printf("READREQUESTRECORD_ERR: ReadGroup: %v\n", err) // Covered by ReadGroup's own error logging
+		// Error already logged in ReadGroup
 		return record, err
 	}
 	record.Group = group
-	// fmt.Printf("ReadRequestRecord: Successfully decoded groupHierarchy with %d groups. Continuing to decode other fields.\n", len(group.Hierarchy)) // Changed from l.Debugf
+	// The existing l.Debugf calls were here, convert them:
+	// l.Debugf("ReadRequestRecord: Called.") -> This is now the entry log above.
+	// l.Debugf("ReadRequestRecord: ReadGroup error: %v", err) -> Covered by ReadGroup
+	// l.Debugf("ReadRequestRecord: Successfully decoded groupHierarchy with %d groups. Continuing to decode other fields.", len(group.Hierarchy))
+	fmt.Printf("READREQUESTRECORD_GROUP_SUCCESS: Groups: %d\n", len(group.Hierarchy))
+
 
 	record.Name, err = ReadCachedSanitizedString(reader)
 	if err != nil {
@@ -326,7 +329,7 @@ func ReadGroupRecord(reader *bufio.Reader, runStartTimestamp int64) (GroupRecord
 
 	group, err := ReadGroup(reader)
 	if err != nil {
-		// fmt.Printf("READGROUPRECORD_ERR: ReadGroup: %v\n", err)
+		// Error logged in ReadGroup
 		return record, err
 	}
 	record.Group = *group
@@ -416,6 +419,7 @@ func ReadErrorRecord(reader *bufio.Reader, runStartTimestamp int64) (ErrorRecord
 	return record, nil
 }
 
+// This is the active ReadNotHeaderRecord function
 func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenarios []string) (interface{}, error) {
 	fmt.Printf("RNHR_CALLED\n")
 	headBytes, errPeek := reader.Peek(8)
@@ -451,7 +455,7 @@ func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenario
 		if errPeek == nil && headBytes != nil {
 			contextBytesForError = headBytes
 		} else {
-			peekAgainBytes, peekErr := reader.Peek(16)
+			peekAgainBytes, peekErr := reader.Peek(16) // Try to peek more for context
 			if peekErr == nil {
 				contextBytesForError = peekAgainBytes
 			}
