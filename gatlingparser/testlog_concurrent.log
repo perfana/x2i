@@ -53,3 +53,7 @@ INFO 2025/06/02 15:40:24 Scenarios [Users Admins]
 INFO 2025/06/02 15:40:24 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC
 INFO 2025/06/02 15:40:24 Scenarios [Users Admins]
 INFO 2025/06/02 15:40:30 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T15:40:25.210893189Z. Records processed in this session: 117. Exiting.
+INFO 2025/06/02 16:17:50 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC
+INFO 2025/06/02 16:17:50 Scenarios [Users Admins]
+INFO 2025/06/02 16:17:50 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC
+INFO 2025/06/02 16:17:50 Scenarios [Users Admins]

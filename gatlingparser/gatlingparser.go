@@ -29,7 +29,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
+	"fmt" // Ensure fmt is imported
 	"io"
 	"math/rand"
 	"os"
@@ -606,37 +606,47 @@ func processRemainingRecords(
 	for {
 		select {
 		case <-ctx.Done():
-			l.Infof("PPR: CTX DONE at loop start. Records processed in this session: %d", recordCounter)
+			// l.Infof("PPR: CTX DONE at loop start. Records processed in this session: %d", recordCounter) // Original
+			fmt.Printf("PPR_CTX_DONE_LOOP_START: Records in session: %d\n", recordCounter) // New
 			return
 		default:
 		}
 
-		l.Debugf("PPR: Loop top. ConsecutiveEOF: %d, LastReadTime: %s", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano))
+		// l.Infof("PPR: Loop top. ConsecutiveEOF: %d, LastReadTime: %s", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano)) // Original
+		fmt.Printf("PPR_LOOP_ENTRY: ConsecutiveEOF: %d, LastReadTime: %s\n", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano)) // New
 
-		record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios) // This calls the logged RNHR in decoders.go
+		fmt.Printf("PPR_CALLING_RNHR\n") // New
+		record, err := ReadNotHeaderRecord(reader, runMessage.Start, scenarios)
 
 		if err == nil {
 			recordCounter++
-			l.Debugf("PPR: Successfully read record #%d. Type: %T", recordCounter, record) // Log type of record
+			// l.Infof("PPR: Successfully read record #%d. Type: %T", recordCounter, record) // Original
+			fmt.Printf("PPR_RNHR_SUCCESS: Record #%d, Type %T\n", recordCounter, record) // New
 			consecutiveEOFCount = 0
 			select {
 			case records <- record:
 				oldLRT := latestReadTime
 				latestReadTime = time.Now()
-				l.Debugf("PPR: Successfully sent record #%d. Updated latestReadTime from %s to %s", recordCounter, oldLRT.Format(time.RFC3339Nano), latestReadTime.Format(time.RFC3339Nano))
+				// l.Infof("PPR: Successfully sent record #%d. Updated latestReadTime from %s to %s", recordCounter, oldLRT.Format(time.RFC3339Nano), latestReadTime.Format(time.RFC3339Nano)) // Original
+				fmt.Printf("PPR_SEND_SUCCESS: Record #%d. LRT %s -> %s\n", recordCounter, oldLRT.Format(time.RFC3339Nano), latestReadTime.Format(time.RFC3339Nano)) // New
 			case <-ctx.Done():
-				l.Infof("PPR: CTX DONE while sending record #%d. Total in session: %d", recordCounter, recordCounter)
+				// l.Infof("PPR: CTX DONE while sending record #%d. Total in session: %d", recordCounter, recordCounter) // Original
+				fmt.Printf("PPR_CTX_DONE_SENDING: Record #%d. Total in session: %d\n", recordCounter, recordCounter) // New
 				return
 			}
 			continue
 		}
 
-		l.Debugf("PPR: ReadNotHeaderRecord returned error: %v", err) // Log the actual error
+		// l.Infof("PPR: ReadNotHeaderRecord returned error: %v", err) // Original (was Infof after previous change)
+		// fmt.Printf below will show the error
 		if err == io.EOF {
+			fmt.Printf("PPR_RNHR_EOF_ERROR: %v\n", err) // New
 			consecutiveEOFCount++
-			l.Debugf("PPR: EOF #%d. Current latestReadTime: %s, stopTimeout: %d", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano), stopTimeout) // stopTimeout is a uint
+			// l.Infof("PPR: EOF #%d. Current latestReadTime: %s, stopTimeout: %ds", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano), stopTimeout) // Original
+			fmt.Printf("PPR_EOF_DETAILS: Count %d. LRT: %s. TimeoutDur: %d\n", consecutiveEOFCount, latestReadTime.Format(time.RFC3339Nano), stopTimeout) // New
 			if time.Now().After(latestReadTime.Add(time.Duration(stopTimeout) * time.Second)) {
-				l.Infof("PPR: TIMEOUT after EOF. LastReadTime: %s. Records processed in this session: %d. Exiting.", latestReadTime.Format(time.RFC3339Nano), recordCounter)
+				// l.Infof("PPR: TIMEOUT after EOF. LastReadTime: %s. Records processed in this session: %d. Exiting.", latestReadTime.Format(time.RFC3339Nano), recordCounter) // Original (this one was showing up)
+				fmt.Printf("PPR_TIMEOUT_AFTER_EOF: LRT: %s. Records in session: %d. Exiting.\n", latestReadTime.Format(time.RFC3339Nano), recordCounter) // New (ensure this variant shows)
 				return
 			}
 
@@ -644,12 +654,14 @@ func processRemainingRecords(
 			if consecutiveEOFCount >= 5 {
 				sleepDuration = 500 * time.Millisecond
 			}
-			l.Debugf("PPR: Sleeping for %s due to EOF #%d", sleepDuration, consecutiveEOFCount)
+			// l.Infof("PPR: Sleeping for %s due to EOF #%d", sleepDuration, consecutiveEOFCount) // Original
+			fmt.Printf("PPR_SLEEPING_EOF: %s for EOF #%d\n", sleepDuration, consecutiveEOFCount) // New
 			time.Sleep(sleepDuration)
 			continue
 		}
 
-		l.Errorf("PPR: Non-EOF Reading error: %v. Pausing.", err) // Log non-EOF errors clearly
+		// l.Errorf("PPR: Non-EOF Reading error: %v. Pausing.", err) // Original
+		fmt.Printf("PPR_RNHR_OTHER_ERROR: %v. Pausing.\n", err) // New
 		time.Sleep(50 * time.Millisecond)
 		continue
 	}
