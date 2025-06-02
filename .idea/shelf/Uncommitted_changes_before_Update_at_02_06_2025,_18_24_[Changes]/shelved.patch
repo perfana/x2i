@@ -1,0 +1,57 @@
+Index: go.mod
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>module github.com/perfana/x2i\n\ngo 1.23.7\n\nrequire (\n\tgithub.com/influxdata/influxdb1-client v0.0.0-20220302092344-a9ab5670611c\n\tgithub.com/spf13/cobra v1.8.1\n)\n\nrequire (\n\tgithub.com/inconshreveable/mousetrap v1.1.0 // indirect\n\tgithub.com/spf13/pflag v1.0.5 // indirect\n\tgolang.org/x/mod v0.23.0\n)\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/go.mod b/go.mod
+--- a/go.mod	(revision 2da5691a52be7e05ded0e28919e25551beb4ca5a)
++++ b/go.mod	(date 1748879047156)
+@@ -1,6 +1,6 @@
+ module github.com/perfana/x2i
+ 
+-go 1.23.7
++go 1.23
+ 
+ require (
+ 	github.com/influxdata/influxdb1-client v0.0.0-20220302092344-a9ab5670611c
+Index: gatlingparser/testlog_concurrent.log
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>INFO 2025/06/02 13:46:55 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:46:55 Scenarios [Users Admins]\nINFO 2025/06/02 13:46:55 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:46:55 Scenarios [Users Admins]\nINFO 2025/06/02 13:46:58 File size unchanged for 2 seconds. Stopping application...\nINFO 2025/06/02 13:48:35 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:48:35 Scenarios [Users Admins]\nINFO 2025/06/02 13:48:35 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:48:35 Scenarios [Users Admins]\nINFO 2025/06/02 13:48:38 File size unchanged for 2 seconds. Stopping application...\nINFO 2025/06/02 13:49:41 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:49:41 Scenarios [Users Admins]\nINFO 2025/06/02 13:49:41 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:49:41 Scenarios [Users Admins]\nINFO 2025/06/02 13:49:43 File size unchanged for 2 seconds. Stopping application...\nINFO 2025/06/02 13:50:48 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:50:48 Scenarios [Users Admins]\nINFO 2025/06/02 13:50:48 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:50:48 Scenarios [Users Admins]\nINFO 2025/06/02 13:50:51 File size unchanged for 2 seconds. Stopping application...\nINFO 2025/06/02 13:53:07 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:53:07 Scenarios [Users Admins]\nINFO 2025/06/02 13:53:07 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:53:07 Scenarios [Users Admins]\nINFO 2025/06/02 13:53:10 No new entries processed for 2 seconds (timeout based on latestReadTime). Stopping application...\nINFO 2025/06/02 13:54:14 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:54:14 Scenarios [Users Admins]\nINFO 2025/06/02 13:54:14 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:54:14 Scenarios [Users Admins]\nINFO 2025/06/02 13:54:17 No new entries processed for 2 seconds (timeout based on latestReadTime). Stopping application...\nINFO 2025/06/02 13:55:34 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:55:34 Scenarios [Users Admins]\nINFO 2025/06/02 13:55:34 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:55:34 Scenarios [Users Admins]\nINFO 2025/06/02 13:55:37 No new entries found for 2 seconds after last successful read (encountered EOF). Stopping application...\nINFO 2025/06/02 13:56:39 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:56:39 Scenarios [Users Admins]\nINFO 2025/06/02 13:56:39 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:56:39 Scenarios [Users Admins]\nINFO 2025/06/02 13:56:42 No new entries found for 2 seconds after last successful read (encountered EOF). Stopping application...\nINFO 2025/06/02 13:57:50 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:57:50 Scenarios [Users Admins]\nINFO 2025/06/02 13:57:50 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 13:57:50 Scenarios [Users Admins]\nINFO 2025/06/02 13:57:56 No new entries found for 5 seconds after last successful read (encountered EOF). Stopping application...\nINFO 2025/06/02 14:08:50 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 14:08:50 Scenarios [Users Admins]\nINFO 2025/06/02 14:08:50 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 14:08:50 Scenarios [Users Admins]\nINFO 2025/06/02 14:08:56 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T14:08:50.941381951Z. Records processed in this session: 117. Exiting.\nINFO 2025/06/02 15:40:24 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 15:40:24 Scenarios [Users Admins]\nINFO 2025/06/02 15:40:24 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC\nINFO 2025/06/02 15:40:24 Scenarios [Users Admins]\nINFO 2025/06/02 15:40:30 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T15:40:25.210893189Z. Records processed in this session: 117. Exiting.\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/gatlingparser/testlog_concurrent.log b/gatlingparser/testlog_concurrent.log
+--- a/gatlingparser/testlog_concurrent.log	(revision 2da5691a52be7e05ded0e28919e25551beb4ca5a)
++++ b/gatlingparser/testlog_concurrent.log	(date 1748881280468)
+@@ -53,3 +53,28 @@
+ INFO 2025/06/02 15:40:24 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 21:58:51.501 +0000 UTC
+ INFO 2025/06/02 15:40:24 Scenarios [Users Admins]
+ INFO 2025/06/02 15:40:30 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T15:40:25.210893189Z. Records processed in this session: 117. Exiting.
++INFO 2025/06/02 15:44:13 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 15:44:13 Scenarios [Users Admins]
++INFO 2025/06/02 15:44:13 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 15:44:13 Scenarios [Users Admins]
++INFO 2025/06/02 15:44:19 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T17:44:13.62012+02:00. Records processed in this session: 117. Exiting.
++INFO 2025/06/02 15:44:51 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 15:44:51 Scenarios [Users Admins]
++INFO 2025/06/02 15:44:51 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 15:44:51 Scenarios [Users Admins]
++INFO 2025/06/02 15:44:57 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T17:44:52.478711+02:00. Records processed in this session: 117. Exiting.
++INFO 2025/06/02 16:11:43 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 16:11:43 Scenarios [Users Admins]
++INFO 2025/06/02 16:11:43 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 16:11:43 Scenarios [Users Admins]
++INFO 2025/06/02 16:11:49 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T18:11:43.809016+02:00. Records processed in this session: 117. Exiting.
++INFO 2025/06/02 16:13:46 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 16:13:46 Scenarios [Users Admins]
++INFO 2025/06/02 16:13:46 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 16:13:46 Scenarios [Users Admins]
++INFO 2025/06/02 16:13:52 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T18:13:47.246061+02:00. Records processed in this session: 117. Exiting.
++INFO 2025/06/02 16:21:14 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 16:21:14 Scenarios [Users Admins]
++INFO 2025/06/02 16:21:14 Starting collecting for Gatling 3.12.1 with simulation computerdatabase.ComputerDatabaseSimulation, that started at 2024-11-04 22:58:51.501 +0100 CET
++INFO 2025/06/02 16:21:14 Scenarios [Users Admins]
++INFO 2025/06/02 16:21:20 PPR: TIMEOUT after EOF. LastReadTime: 2025-06-02T18:21:15.057149+02:00. Records processed in this session: 117. Exiting.

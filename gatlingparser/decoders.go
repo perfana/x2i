@@ -8,8 +8,7 @@ import (
 	"io"
 	"math"
 	"strings"
-
-	l "github.com/perfana/x2i/logger" // Keep l for other logs if any, though prompt implies converting all specified ones
+	//l "github.com/perfana/x2i/logger" // Keep l for other logs if any, though prompt implies converting all specified ones
 )
 
 const (
@@ -90,7 +89,7 @@ func ReadString(reader *bufio.Reader) (string, error) {
 	}
 	readString := string(strBytes)
 	// This existing fmt.Printf is fine, can be kept or removed if too noisy later
-	// fmt.Printf("DEBUG: Read string as %q\n", readString) 
+	// fmt.Printf("DEBUG: Read string as %q\n", readString)
 	return readString, nil
 }
 
@@ -238,7 +237,7 @@ func ReadHeader(reader *bufio.Reader) (RunMessage, []string, [][]byte, error) {
 
 func ReadGroup(reader *bufio.Reader) (*Group, error) {
 	fmt.Printf("READGROUP_CALLED\n")
-	const maxHierarchyLength = 2000 
+	const maxHierarchyLength = 2000
 
 	hierarchyLength, err := ReadInt(reader)
 	if err != nil {
@@ -422,9 +421,9 @@ func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenario
 	fmt.Printf("RNHR_CALLED\n")
 	headBytes, errPeek := reader.Peek(8)
 	if errPeek != nil && errPeek != io.EOF {
-		 fmt.Printf("RNHR_PEEK_ERR: %v\n", errPeek)
+		fmt.Printf("RNHR_PEEK_ERR: %v\n", errPeek)
 	} else if errPeek == nil {
-		 fmt.Printf("RNHR_PEEKED_BYTES: %s\n", hex.EncodeToString(headBytes))
+		fmt.Printf("RNHR_PEEKED_BYTES: %s\n", hex.EncodeToString(headBytes))
 	}
 
 	recordTypeByte, err := reader.ReadByte()
@@ -459,8 +458,8 @@ func ReadNotHeaderRecord(reader *bufio.Reader, runStartTimestapm int64, scenario
 			}
 		}
 		if len(contextBytesForError) > 0 {
-            hexContext = hex.EncodeToString(contextBytesForError)
-        }
+			hexContext = hex.EncodeToString(contextBytesForError)
+		}
 		errUnknown := fmt.Errorf("unknown record type: %d", recordTypeByte)
 		fmt.Printf("RNHR_UNKNOWN_TYPE_ERR: %v. Context: %s\n", errUnknown, hexContext)
 		return nil, errUnknown
