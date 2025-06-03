@@ -31,9 +31,9 @@ import (
 	"time"
 
 	l "github.com/perfana/x2i/logger"
-	_ "github.com/influxdata/influxdb1-client" // workaround from client documentation
-	client "github.com/influxdata/influxdb1-client/v2"
-	infc "github.com/influxdata/influxdb1-client/v2"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/influxdata/influxdb-client-go/v2/api"
+	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	"github.com/spf13/cobra"
 )
 
@@ -53,14 +53,16 @@ type userLineData struct {
 }
 
 var (
-	c         infc.Client
-	dbName    string
-	info      testInfo
-	lastPoint time.Time
-	maxPoints uint
+	client     influxdb2.Client
+	writeAPI   api.WriteAPIBlocking
+	org        string
+	bucket     string
+	info       testInfo
+	lastPoint  time.Time
+	maxPoints  uint
 
 	// pc is a channel to send all point from parser to
-	pc = make(chan *infc.Point, 1000)
+	pc = make(chan *write.Point, 1000)
 	// uc is a channel for userLineData processing
 	uc = make(chan userLineData, 1000)
 
@@ -80,31 +82,25 @@ func InitTestInfo(systemUnderTest, testEnvironment, simulationName, description,
 	}
 }
 
-// NewPoint is mostly an alias fo standard NewPoint function from influx package,
+// NewPoint is mostly an alias for standard NewPoint function from influx package,
 // except timestamp is required
-func NewPoint(name string, tags map[string]string, fields map[string]interface{}, t time.Time) (*infc.Point, error) {
-	return infc.NewPoint(name, tags, fields, t)
+func NewPoint(name string, tags map[string]string, fields map[string]interface{}, t time.Time) (*write.Point, error) {
+	return influxdb2.NewPoint(name, tags, fields, t), nil
 }
 
 // SendPoint sends point to the channel listened by metrics consumer
-func SendPoint(p *infc.Point) {
+func SendPoint(p *write.Point) {
 	pc <- p
 }
 
-func sendBatch(points []*infc.Point) {
+func sendBatch(points []*write.Point) {
 	const retries = 5
-
-	bp, _ := infc.NewBatchPoints(infc.BatchPointsConfig{
-		Precision: "ns",
-		Database:  dbName,
-	})
-	bp.AddPoints(points)
 
 	// Retry mechanism for batch points sending
 	var errCounter int
 SendLoop:
 	for {
-		err := c.Write(bp)
+		err := writeAPI.WritePoint(context.Background(), points...)
 		if err != nil {
 			l.Errorf("Error sending points batch to InfluxDB: %v\n", err)
 			errCounter++
@@ -113,8 +109,9 @@ SendLoop:
 				return
 			}
 			time.Sleep(2 * time.Second)
+		} else {
+			break SendLoop
 		}
-		break SendLoop
 	}
 
 	if errCounter > 0 {
@@ -132,11 +129,11 @@ func SendUserLineData(timestamp time.Time, scenario, status string) {
 	uc <- uld
 }
 
-func sendUserData(m map[string]int, ts time.Time) ([]*client.Point, error) {
+func sendUserData(m map[string]int, ts time.Time) ([]*write.Point, error) {
 	// Prepare points
-	points := make([]*client.Point, 0, len(m))
+	points := make([]*write.Point, 0, len(m))
 	for k, v := range m {
-		point, err := client.NewPoint(
+		point := influxdb2.NewPoint(
 			"users",
 			map[string]string{
 				"scenario":        k,
@@ -149,12 +146,8 @@ func sendUserData(m map[string]int, ts time.Time) ([]*client.Point, error) {
 			},
 			ts,
 		)
-		if err != nil {
-			return nil, fmt.Errorf("Error creating new point with user data: %w", err)
-		}
 
 		points = append(points, point)
-
 	}
 
 	return points, nil
@@ -185,7 +178,7 @@ CollectorLoop:
 		case <-ctx.Done():
 			// Init closeup
 			closingPointTime := lastPoint
-			var points []*client.Point
+			var points []*write.Point
 			// Fill empty points with last available data
 			// Last point in buffer should always be sent. So this is an imitation of do-while loop
 			for {
@@ -267,7 +260,7 @@ CollectorLoop:
 
 func metricsPointsCollector(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
-	points := make([]*infc.Point, 0, int(maxPoints))
+	points := make([]*write.Point, 0, int(maxPoints))
 
 	timer := time.NewTimer(time.Second * time.Duration(writeDataTimeout))
 CollectorLoop:
@@ -278,7 +271,7 @@ CollectorLoop:
 			if len(points) > 0 {
 				sendBatch(points)
 				// After sending points to server clear points buffer
-				points = make([]*infc.Point, 0, int(maxPoints))
+				points = make([]*write.Point, 0, int(maxPoints))
 			}
 			// Reset timer
 			timer.Reset(time.Second * time.Duration(writeDataTimeout))
@@ -289,7 +282,7 @@ CollectorLoop:
 			if len(points) == int(maxPoints) {
 				sendBatch(points)
 				// After sending points to server clear points buffer
-				points = make([]*infc.Point, 0, maxPoints)
+				points = make([]*write.Point, 0, maxPoints)
 				// Reset timer
 				timer.Reset(time.Second * time.Duration(writeDataTimeout))
 			}
@@ -297,13 +290,12 @@ CollectorLoop:
 			// Don't use users data because it has aggregated time stamp instead of concrete one
 			if p.Name() != "users" {
 				lastPoint = p.Time()
-			}
-		// Await for external stop signal
+			}		// Await for external stop signal
 		case <-ctx.Done():
 			// Send any unsent points
 			if len(points) > 0 {
 				sendBatch(points)
-				points = make([]*infc.Point, 0, int(maxPoints))
+				points = make([]*write.Point, 0, int(maxPoints))
 			}
 			break CollectorLoop
 		}
@@ -319,7 +311,7 @@ func sendClosingPoint() {
 	}
 
 	// Create a point signifying a test end
-	p, _ := infc.NewPoint(
+	p := influxdb2.NewPoint(
 		"tests",
 		map[string]string{
 			"action":          "end",
@@ -331,11 +323,11 @@ func sendClosingPoint() {
 		map[string]interface{}{
 			"description": info.description,
 		},
-		// Add 5 secods to the time since last point was received
+		// Add 5 seconds to the time since last point was received
 		lastPoint.Add(time.Second*5),
 	)
 
-	sendBatch([]*infc.Point{p})
+	sendBatch([]*write.Point{p})
 }
 
 // StartProcessing starts consumers that receive points from parser and send to
@@ -372,40 +364,99 @@ func StartProcessing(ctx context.Context, owg *sync.WaitGroup) {
 
 // InitInfluxConnection establishes connection to InfluxDB database
 // and checks if it is successful
-func InitInfluxConnection(cmd *cobra.Command) error {
-	username, _ := cmd.Flags().GetString("username")
-	password, _ := cmd.Flags().GetString("password")
+func InitInfluxConnection(cmd *cobra.Command) error {	// Get parameters from command flags
+	token, _ := cmd.Flags().GetString("token")
 	address, _ := cmd.Flags().GetString("address")
-	dbName, _ = cmd.Flags().GetString("database")
+	org, _ = cmd.Flags().GetString("org")
+	bucket, _ = cmd.Flags().GetString("bucket")
 	maxPoints, _ = cmd.Flags().GetUint("max-batch-size")
 	detached, _ := cmd.Flags().GetBool("detached")
-
-	var err error
-	c, err = infc.NewHTTPClient(infc.HTTPConfig{
-		Addr:          address,
-		Username:      username,
-		Password:      password,
-		UserAgent:     fmt.Sprintf("x2i-http-client-%s(%s)", cmd.Version, runtime.Version()),
-		Timeout:       time.Second * 60,
-		WriteEncoding: "gzip",
-	})
-	if err != nil {
-		return err
+	
+	// Get InfluxDB v1 parameters for backward compatibility
+	username, _ := cmd.Flags().GetString("username")
+	password, _ := cmd.Flags().GetString("password")
+	database, _ := cmd.Flags().GetString("database")
+	
+	// Check if we should use InfluxDB v1 compatibility (when username/password/database are provided)
+	useV1Compatibility := (username != "" || password != "" || database != "")
+	
+	// If database is provided but bucket is not, use database as bucket
+	if bucket == "" && database != "" {
+		bucket = database
 	}
-	//sleep for 15 seconds to allow influxdb to	start
+	
+	// Create a new client with InfluxDB v2 API
+	appName := fmt.Sprintf("x2i-http-client-%s(%s)", cmd.Version, runtime.Version())
+		if useV1Compatibility {
+		// Check if we're missing required parameters for v1 mode
+		if database == "" {
+			return fmt.Errorf("when using InfluxDB v1, a database must be provided with the --database flag")
+		}
+		
+		// Create v2 client with v1 compatibility options
+		v1Token := fmt.Sprintf("%s:%s", username, password)
+		client = influxdb2.NewClientWithOptions(
+			address,
+			v1Token,
+			influxdb2.DefaultOptions().
+				SetApplicationName(appName).
+				SetHTTPRequestTimeout(60),
+		)
+		
+		// When using v1 compatibility mode, org is "-" and bucket is the database name
+		org = "-" // This is the standard convention for v1 compatibility in InfluxDB v2
+		bucket = database
+		
+		l.Infof("Using InfluxDB v1 compatibility mode (database: %s)", database)
+	} else {
+		// Create standard v2 client
+		client = influxdb2.NewClientWithOptions(
+			address,
+			token,
+			influxdb2.DefaultOptions().
+				SetApplicationName(appName).
+				SetHTTPRequestTimeout(60),
+		)
+	}
+	// Check if we're missing required parameters for v2 mode
+	if !useV1Compatibility && (token == "" || org == "" || bucket == "") {
+		if token == "" {
+			return fmt.Errorf("when using InfluxDB v2, a token must be provided with the --token flag")
+		}
+		if org == "" {
+			return fmt.Errorf("when using InfluxDB v2, an organization must be provided with the --org flag")
+		}
+		if bucket == "" {
+			return fmt.Errorf("when using InfluxDB v2, a bucket must be provided with the --bucket flag")
+		}
+	}
+	
+	// Create write API blocking
+	writeAPI = client.WriteAPIBlocking(org, bucket)
+
+	// Sleep for 15 seconds to allow influxdb to start
+	// This is needed for setups where influxdb is starting in parallel
 	time.Sleep(15 * time.Second)
 
-	_, _, err = c.Ping(time.Second * 10)
+	// Check health
+	health, err := client.Health(context.Background())
 	if err != nil {
-		return fmt.Errorf("Connection with InfluxDB at %s could not be established. Error: %w", address, err)
+		return fmt.Errorf("connection with InfluxDB at %s could not be established. Error: %w", address, err)
 	}
-	res, err := c.Query(infc.NewQuery("SHOW MEASUREMENTS", dbName, ""))
+	
+	if health.Status != "pass" {
+		return fmt.Errorf("connection with InfluxDB at %s is not healthy. Status: %s", address, health.Status)
+	}
+	
+	// Check if bucket exists with a simple query
+	queryAPI := client.QueryAPI(org)
+	_, err = queryAPI.Query(context.Background(), fmt.Sprintf(`from(bucket:"%s") |> range(start: -1m) |> limit(n:1)`, bucket))
 	if err != nil {
-		return fmt.Errorf("Connection with InfluxDB at %s could not be established. Error: %w", address, err)
+		return fmt.Errorf("bucket '%s' test query failed with error: %w", bucket, err)
 	}
-	if err := res.Error(); err != nil {
-		return fmt.Errorf("Test query failed with error: %w", err)
-	}
+	
+	l.Infof("Successfully connected to InfluxDB at %s (bucket: %s, org: %s)", address, bucket, org)
+
 	if !detached {
 		l.Infof("Connection with InfluxDB at %s successfully established\n", address)
 		return nil
@@ -416,5 +467,6 @@ func InitInfluxConnection(cmd *cobra.Command) error {
 
 // CloseDBConnection just closes a connection to database when called
 func CloseDBConnection() error {
-	return c.Close()
+	client.Close()
+	return nil
 }

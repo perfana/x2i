@@ -26,13 +26,32 @@ AMD64 Linux. Our development systems also include MacOS on ARM. Other platforms 
 unknown issues.
 
 ## Influxdb requirements
-x2i requires an existing database with read/write access. The read access is used to verify the connection to the
-database.
+x2i requires either:
+- For InfluxDB v1: an existing database with read/write access.
+- For InfluxDB v2: an existing organization and bucket with a token having read/write permissions.
+
+The read access is used to verify the connection to the database.
 
 The following versions of InfluxDB are known to work:
 * InfluxDB OSS 1.8.10
+* InfluxDB v2.x
 
-Later versions of InfluxDB are not supported.
+### InfluxDB v1 to v2 Migration
+As of this release, x2i supports both InfluxDB v1 and v2. The application will automatically detect which version you are using based on the parameters provided:
+
+- If you provide `--token` and `--org`, it will use the InfluxDB v2 API.
+- If you provide `--username` and `--password`, it will use the v1 compatibility mode of the InfluxDB v2 API.
+
+When migrating from InfluxDB v1 to v2:
+1. Create an organization and bucket in your InfluxDB v2 instance
+2. Create a token with appropriate permissions
+3. Use the following command-line arguments:
+   - `--address` - The HTTP address of your InfluxDB v2 instance (e.g., http://localhost:8086)
+   - `--token` - Your InfluxDB v2 authentication token
+   - `--org` - Your InfluxDB v2 organization name
+   - `--bucket` - Your InfluxDB v2 bucket name
+
+The old v1 arguments (`--username`, `--password`, `--database`) are still supported for backward compatibility but are deprecated and will be removed in a future release.
 
 ## Usage
 Run `x2i -h` for a quick help with examples for the different load generation tools that are supported.
@@ -40,7 +59,14 @@ Run `x2i -h` for a quick help with examples for the different load generation to
 ### Generic
 x2i needs only one argument, the location where to find the results of the testrun. In a common scenario you will
 provide additional arguments for:
+
+For InfluxDB v1:
 * the address, database, username and password for influxdb
+
+For InfluxDB v2:
+* the address, bucket, organization, and token for influxdb
+
+Additionally:
 * the test tool that is used; this can be omitted if gatling is used
 
 The `--system-under-test` and `--test-environment` arguments could be used, and are required for the Perfana integration
