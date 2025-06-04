@@ -143,6 +143,7 @@ func init() {
 	rootCmd.Flags().StringP("log", "l", "x2i.log", "File path to x2i log file")
 	rootCmd.Flags().StringP("test-environment", "t", "", "Test environment identifier")
 	rootCmd.Flags().StringP("system-under-test", "y", "", "System under test identifier")
+	rootCmd.Flags().StringP("custom-tags", "c", "", "Custom tags in key=value,key2=value2 format")
 	rootCmd.Flags().UintP("stop-timeout", "s", 120, "Time (seconds) to exit if no new log lines found")
 	rootCmd.Flags().UintP("max-batch-size", "m", 1000, "Max points batch size to sent to InfluxDB")
 

@@ -72,8 +72,28 @@ Additionally:
 The `--system-under-test` and `--test-environment` arguments could be used, and are required for the Perfana integration
 to work properly.
 
+You can also add custom tags using the `--custom-tags` or `-c` argument in the format `key1=value1,key2=value2,key3=value3`. 
+These custom tags will be added as tags to all InfluxDB data points, allowing you to filter and group your performance test 
+results based on additional dimensions like version, environment type, build number, or any other metadata you need to track.
+
 Datapoints are send to Influxdb when either the hardcoded timeout of 5 seconds is reached, or when `--max-batch-size`
 number of datapoints is logged. The number of datapoints that is being send is logged in the x2i log file.
+
+### Command-line options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--address` | `-a` | HTTP address and port of InfluxDB instance (default: http://localhost:8086) |
+| `--token` | `-k` | Authentication token for InfluxDB v2 |
+| `--org` | `-o` | Organization name in InfluxDB v2 |
+| `--bucket` | `-b` | Bucket name in InfluxDB v2 |
+| `--testtool` | `-i` | Testtool used, can be gatling, jmeter or k6 (default: gatling) |
+| `--log` | `-l` | File path to x2i log file (default: x2i.log) |
+| `--test-environment` | `-t` | Test environment identifier |
+| `--system-under-test` | `-y` | System under test identifier |
+| `--custom-tags` | `-c` | Custom tags in key=value,key2=value2 format |
+| `--stop-timeout` | `-s` | Time (seconds) to exit if no new log lines found (default: 120) |
+| `--max-batch-size` | `-m` | Max points batch size to sent to InfluxDB (default: 1000) |
 
 ### Gatling
 * Requires version 3.5.0 or above.
@@ -111,7 +131,7 @@ Use `k6 run --out csv=test_results.csv`.
 ### Perfana
 When using x2i with Perfana, x2i will be started using a CommandRunnerEventConfig in your POM. In the starter
 packages for gatling, jmeter and k6, you will find a perfect example. The `--system-under-test` and `--test-environment`
-arguments are required for the Perfana integration to work properly.
+arguments are required for the Perfana integration to work properly. You can use the `--custom-tags` or `-c` argument to add additional context to your test runs, such as application version, branch name, or any other metadata relevant to your test analysis.
 
 ### CI/CD
 You could integrate x2i in your CI/CD pipeline. When running in detached mode, x2i will return the PID as follows:
@@ -120,11 +140,11 @@ You could integrate x2i in your CI/CD pipeline. When running in detached mode, x
 [PID]	20201
 ```
 
-allowing you to stop the process when the test has finished.
+allowing you to stop the process when the test has finished. You can also use the `--custom-tags` or `-c` argument to include build-specific information like build number, git commit hash, or branch name:
 
 ```bash
 echo "Starting x2i in detached mode, saving PID in variable" && \
-x2iPID=$(x2i <arguments> -d | awk '{print $2}') && \
+x2iPID=$(x2i <arguments> -c version=1.2.3,build=$BUILD_NUMBER,commit=$GIT_COMMIT -d | awk '{print $2}') && \
 echo "Build and execute test" && \
 <run your test> \
 echo "Waiting for parser to safely finish all its work" && \

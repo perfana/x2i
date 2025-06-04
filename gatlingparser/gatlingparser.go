@@ -71,6 +71,7 @@ var (
 	testEnvironment  string
 	simulationName   string
 	waitTime         uint
+	customTags       map[string]string
 
 	tabSep = []byte{9}
 
@@ -766,11 +767,34 @@ func parseStart(ctx context.Context, wg *sync.WaitGroup) {
 	}
 }
 
+// parseCustomTags parses custom tags from string in format "key1=value1,key2=value2"
+func parseCustomTags(tagsStr string) map[string]string {
+	result := make(map[string]string)
+	if tagsStr == "" {
+		return result
+	}
+
+	pairs := strings.Split(tagsStr, ",")
+	for _, pair := range pairs {
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) == 2 {
+			key := strings.TrimSpace(kv[0])
+			value := strings.TrimSpace(kv[1])
+			if key != "" {
+				result[key] = value
+			}
+		}
+	}
+	return result
+}
+
 // RunMain performs main application logic
 func RunMain(cmd *cobra.Command, dir string) {
 	systemUnderTest, _ = cmd.Flags().GetString("system-under-test")
 	testEnvironment, _ = cmd.Flags().GetString("test-environment")
 	waitTime, _ = cmd.Flags().GetUint("stop-timeout")
+	customTagsStr, _ := cmd.Flags().GetString("custom-tags")
+	customTags = parseCustomTags(customTagsStr)
 	rand.Seed(time.Now().UnixNano())
 	nodeName, _ = os.Hostname()
 

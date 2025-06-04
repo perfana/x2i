@@ -22,15 +22,22 @@ func (rm RunMessage) String() string {
 }
 
 func (rm RunMessage) ToInfluxPoint(testStartTime time.Time) (*write.Point, error) {
+	tags := map[string]string{
+		"action":          "start",
+		"simulation":      simulationName,
+		"systemUnderTest": systemUnderTest,
+		"testEnvironment": testEnvironment,
+		"nodeName":        nodeName,
+	}
+
+	// Add custom tags if any
+	for k, v := range customTags {
+		tags[k] = v
+	}
+	
 	return influx.NewPoint(
 		"tests",
-		map[string]string{
-			"action":          "start",
-			"simulation":      simulationName,
-			"systemUnderTest": systemUnderTest,
-			"testEnvironment": testEnvironment,
-			"nodeName":        nodeName,
-		},
+		tags,
 		map[string]interface{}{
 			"description": rm.RunDescription,
 		},
@@ -84,18 +91,25 @@ func (rr RequestRecord) ToInfluxPoint() (*write.Point, error) {
 		errorMessage = *rr.ErrorMessage
 	}
 
+	tags := map[string]string{
+		"name":            strings.TrimSpace(strings.ReplaceAll(rr.Name, " ", "_")),
+		"groups":          groupString,
+		"result":          statusString,
+		"simulation":      simulationName,
+		"systemUnderTest": systemUnderTest,
+		"testEnvironment": testEnvironment,
+		"nodeName":        nodeName,
+		"errorMessage":    errorMessage,
+	}
+
+	// Add custom tags if any
+	for k, v := range customTags {
+		tags[k] = v
+	}
+
 	return influx.NewPoint(
 		"requests",
-		map[string]string{
-			"name":            strings.TrimSpace(strings.ReplaceAll(rr.Name, " ", "_")),
-			"groups":          groupString,
-			"result":          statusString,
-			"simulation":      simulationName,
-			"systemUnderTest": systemUnderTest,
-			"testEnvironment": testEnvironment,
-			"nodeName":        nodeName,
-			"errorMessage":    errorMessage,
-		},
+		tags,
 		map[string]interface{}{
 			"duration": int(rr.EndTimestamp - rr.StartTimestamp),
 		},
@@ -117,16 +131,23 @@ func (gr GroupRecord) ToInfluxPoint() (*write.Point, error) {
 	groupString := strings.TrimSpace(strings.Join(gr.Group.Hierarchy, "_"))
 	statusString := statusToString(gr.Status)
 
+	tags := map[string]string{
+		"name":            groupString,
+		"result":          statusString,
+		"simulation":      simulationName,
+		"systemUnderTest": systemUnderTest,
+		"testEnvironment": testEnvironment,
+		"nodeName":        nodeName,
+	}
+
+	// Add custom tags if any
+	for k, v := range customTags {
+		tags[k] = v
+	}
+
 	return influx.NewPoint(
 		"groups",
-		map[string]string{
-			"name":            groupString,
-			"result":          statusString,
-			"simulation":      simulationName,
-			"systemUnderTest": systemUnderTest,
-			"testEnvironment": testEnvironment,
-			"nodeName":        nodeName,
-		},
+		tags,
 		map[string]interface{}{
 			"totalDuration": int(gr.EndTimestamp - gr.StartTimestamp),
 			"rawDuration":   int(gr.CumulatedResponseTime),
@@ -179,14 +200,22 @@ type ErrorRecord struct {
 
 func (er ErrorRecord) ToInfluxPoint() (*write.Point, error) {
 	timestamp := toInfluxTimestamp(er.Timestamp)
+	
+	tags := map[string]string{
+		"systemUnderTest": systemUnderTest,
+		"testEnvironment": testEnvironment,
+		"nodeName":        nodeName,
+		"simulation":      simulationName,
+	}
+
+	// Add custom tags if any
+	for k, v := range customTags {
+		tags[k] = v
+	}
+
 	return influx.NewPoint(
 		"errors",
-		map[string]string{
-			"systemUnderTest": systemUnderTest,
-			"testEnvironment": testEnvironment,
-			"nodeName":        nodeName,
-			"simulation":      simulationName,
-		},
+		tags,
 		map[string]interface{}{
 			"errorMessage": er.Message,
 		},
