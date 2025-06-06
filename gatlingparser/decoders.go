@@ -28,14 +28,6 @@ func ReadInt(reader *bufio.Reader) (int32, error) {
 
 func currentByteOrder() binary.ByteOrder {
 	var order binary.ByteOrder = binary.BigEndian
-	//if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-	//	order = binary.LittleEndian
-	//}
-	//l.Debugf("Using byte order: %v for OS: %s, ARCH: %s",
-	//	order == binary.LittleEndian,
-	//	runtime.GOOS,
-	//	runtime.GOARCH,
-	//)
 	return order
 }
 
