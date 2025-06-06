@@ -92,7 +92,7 @@ var rootCmd = &cobra.Command{
 	Use: "x2i [path/to/results/dir]",
 	Example: "x2i [path]/target/gatling -i gatling -d -b gatling\nx2i [path]/target/jmeter/results -i jmeter -d -b jmeter\nx2i [path] -i k6 -d -b k6",
 	Short: "\nWrite Gatling, JMeter or K6 logs directly to InfluxDB.\n\nMore info at https://github.com/perfana/x2i",
-	Version: "v1.0.0",
+	Version: "v2.0.0", // Updated for InfluxDB v2 support
 	PreRunE: preRunSetup,
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -128,13 +128,22 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Display current x2i application version")
 	rootCmd.Flags().BoolP("detached", "d", false, "Run application in background. Returns [PID] on start")
 	rootCmd.Flags().StringP("address", "a", "http://localhost:8086", "HTTP address and port of InfluxDB instance")
-	rootCmd.Flags().StringP("username", "u", "", "Username credential for InfluxDB instance")
-	rootCmd.Flags().StringP("password", "p", "", "Password credential for InfluxDB instance")
-	rootCmd.Flags().StringP("database", "b", "", "Database name in InfluxDB")
+	rootCmd.Flags().StringP("token", "k", "", "Authentication token for InfluxDB v2")
+	rootCmd.Flags().StringP("org", "o", "", "Organization name in InfluxDB v2")
+	rootCmd.Flags().StringP("bucket", "b", "", "Bucket name in InfluxDB v2")
+	// Keep these flags for backward compatibility but mark them as deprecated
+	rootCmd.Flags().StringP("username", "u", "", "Username credential for InfluxDB instance (deprecated, use token instead)")
+	rootCmd.Flags().StringP("password", "p", "", "Password credential for InfluxDB instance (deprecated, use token instead)")
+	rootCmd.Flags().StringP("database", "", "", "Database name in InfluxDB (deprecated, use bucket instead)")
+	rootCmd.Flags().MarkDeprecated("username", "use token instead")
+	rootCmd.Flags().MarkDeprecated("password", "use token instead")
+	rootCmd.Flags().MarkDeprecated("database", "use bucket instead")
+	
 	rootCmd.Flags().StringP("testtool", "i", "gatling", "Testtool used, can be gatling, jmeter or k6")
 	rootCmd.Flags().StringP("log", "l", "x2i.log", "File path to x2i log file")
 	rootCmd.Flags().StringP("test-environment", "t", "", "Test environment identifier")
 	rootCmd.Flags().StringP("system-under-test", "y", "", "System under test identifier")
+	rootCmd.Flags().StringP("custom-tags", "c", "", "Custom tags in key=value,key2=value2 format")
 	rootCmd.Flags().UintP("stop-timeout", "s", 120, "Time (seconds) to exit if no new log lines found")
 	rootCmd.Flags().UintP("max-batch-size", "m", 1000, "Max points batch size to sent to InfluxDB")
 
